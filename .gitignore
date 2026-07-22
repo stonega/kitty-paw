@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Generated extension bundles and schemas
+dist/
+*.shell-extension.zip
+src/schemas/gschemas.compiled
+
+# Test and tool output
+coverage/
+.cache/
+.codegraph/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*~
+
+# Local editor and OS metadata
+.idea/
+.DS_Store

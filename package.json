@@ -1,0 +1,19 @@
+{
+  "name": "kitty-session-restorer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "bun run lint && bun test && bun run test:gjs && bun run validate:schema",
+    "format": "biome check --write .",
+    "install:local": "bash scripts/install-local.sh",
+    "lint": "biome check .",
+    "package": "bash scripts/package.sh",
+    "smoke": "bash scripts/smoke-test.sh",
+    "test:gjs": "gjs -m tests/gjs/runtime.js",
+    "validate:schema": "bash scripts/validate-schema.sh"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.5"
+  }
+}

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.kitty-session-restorer"
+          path="/org/gnome/shell/extensions/kitty-session-restorer/">
+    <key name="autosave-interval-seconds" type="u">
+      <range min="5" max="300"/>
+      <default>30</default>
+      <summary>Autosave interval</summary>
+      <description>Seconds between periodic Kitty session snapshots.</description>
+    </key>
+    <key name="kitty-command" type="s">
+      <default>'kitty'</default>
+      <summary>Kitty executable</summary>
+      <description>An executable name on PATH or an absolute path to Kitty.</description>
+    </key>
+    <key name="kitten-command" type="s">
+      <default>'kitten'</default>
+      <summary>Kitten executable</summary>
+      <description>An executable name on PATH or an absolute path to Kitten.</description>
+    </key>
+    <key name="socket-template" type="s">
+      <default>'unix:/tmp/kitty-{pid}'</default>
+      <summary>Remote-control socket template</summary>
+      <description>The Kitty remote-control address. The {pid} placeholder is required; {runtimeDir} and {uid} are also supported.</description>
+    </key>
+    <key name="kitty-window-identifiers" type="as">
+      <default>['kitty', 'kitty.desktop']</default>
+      <summary>Kitty window identifiers</summary>
+      <description>Application IDs or WM_CLASS values that identify Kitty windows.</description>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,7 @@
+.kitty-session-restorer-busy {
+  opacity: 0.65;
+}
+
+.kitty-session-restorer-error {
+  color: #ed333b;
+}
