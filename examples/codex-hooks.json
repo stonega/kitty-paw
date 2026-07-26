@@ -1,0 +1,30 @@
+{
+  "description": "Record the active Codex thread on its Kitty window for exact session restoration.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "gjs -m \"$HOME/.local/share/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js\"",
+            "timeout": 3,
+            "statusMessage": "Linking this Codex thread to its Kitty tab"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "gjs -m \"$HOME/.local/share/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js\"",
+            "timeout": 3,
+            "statusMessage": "Clearing this Codex thread from its Kitty tab"
+          }
+        ]
+      }
+    ]
+  }
+}

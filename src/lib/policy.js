@@ -1,6 +1,7 @@
 import { MANIFEST_VERSION, SNAPSHOT_SLOTS } from './constants.js';
 
 const SESSION_FILE_PATTERN = /^instance-\d{3}\.session$/;
+export const MAX_WORKSPACE_INDEX = 255;
 
 export function normalizeIdentifier(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -16,18 +17,52 @@ export function matchesKittyWindow(window, identifiers) {
 }
 
 export function collectKittyPids(windows, identifiers) {
-  const pids = new Set();
+  return collectKittyInstances(windows, identifiers).map(({ pid }) => pid);
+}
 
-  for (const window of windows) {
-    if (
-      matchesKittyWindow(window, identifiers) &&
-      Number.isSafeInteger(window.pid) &&
-      window.pid > 0
+export function collectKittyInstances(windows, identifiers) {
+  const orderedWindows = windows
+    .map((window, inputOrder) => ({ inputOrder, window }))
+    .filter(
+      ({ window }) =>
+        matchesKittyWindow(window, identifiers) &&
+        Number.isSafeInteger(window.pid) &&
+        window.pid > 0,
     )
-      pids.add(window.pid);
+    .sort((left, right) => {
+      const leftSequence = Number.isSafeInteger(left.window.stableSequence)
+        ? left.window.stableSequence
+        : Number.MAX_SAFE_INTEGER;
+      const rightSequence = Number.isSafeInteger(right.window.stableSequence)
+        ? right.window.stableSequence
+        : Number.MAX_SAFE_INTEGER;
+      return leftSequence - rightSequence || left.inputOrder - right.inputOrder;
+    });
+
+  const instances = new Map();
+  for (const { window } of orderedWindows) {
+    if (!instances.has(window.pid)) instances.set(window.pid, []);
+    const workspaceIndex = isWorkspaceIndex(window.workspaceIndex) ? window.workspaceIndex : null;
+    instances.get(window.pid).push(workspaceIndex);
   }
 
-  return [...pids].sort((left, right) => left - right);
+  return [...instances.entries()]
+    .sort(([leftPid], [rightPid]) => leftPid - rightPid)
+    .map(([pid, workspaces]) => ({ pid, workspaces }));
+}
+
+export function isWorkspaceIndex(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_WORKSPACE_INDEX;
+}
+
+export function validateWorkspaceAssignments(workspaces) {
+  return (
+    Array.isArray(workspaces) &&
+    workspaces.length > 0 &&
+    workspaces.every(
+      (workspaceIndex) => workspaceIndex === null || isWorkspaceIndex(workspaceIndex),
+    )
+  );
 }
 
 export function expandSocketTemplate(template, pid, environment = {}) {
@@ -61,6 +96,8 @@ export function validateManifest(manifest) {
     if (!instance || typeof instance !== 'object') return false;
     if (!Number.isSafeInteger(instance.pid) || instance.pid <= 0) return false;
     if (typeof instance.file !== 'string' || !SESSION_FILE_PATTERN.test(instance.file))
+      return false;
+    if (instance.workspaces !== undefined && !validateWorkspaceAssignments(instance.workspaces))
       return false;
     if (files.has(instance.file)) return false;
     files.add(instance.file);

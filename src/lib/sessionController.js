@@ -3,6 +3,7 @@ import GLib from 'gi://GLib';
 
 import { EXTENSION_NAME, SETTINGS_KEYS } from './constants.js';
 import { expandSocketTemplate, restoreDecision } from './policy.js';
+import { prepareSavedSession } from './sessionFile.js';
 
 const EVENT_DEBOUNCE_SECONDS = 2;
 const ERROR_NOTIFICATION_COOLDOWN_SECONDS = 10 * 60;
@@ -53,8 +54,10 @@ export class SessionController {
       }),
     );
     for (const key of [
+      SETTINGS_KEYS.autoRunCommands,
       SETTINGS_KEYS.kittyCommand,
       SETTINGS_KEYS.kittenCommand,
+      SETTINGS_KEYS.resumeForegroundProcesses,
       SETTINGS_KEYS.socketTemplate,
       SETTINGS_KEYS.windowIdentifiers,
     ]) {
@@ -129,9 +132,12 @@ export class SessionController {
     this._setStatus('restoring');
     try {
       const kittyCommand = this._settings.get_string(SETTINGS_KEYS.kittyCommand);
-      for (const sessionPath of snapshot.sessionPaths) {
+      for (const [index, sessionPath] of snapshot.sessionPaths.entries()) {
         if (this._stopped) return;
-        await this._client.launchSession({ kittyCommand, sessionPath });
+        const launch = () => this._client.launchSession({ kittyCommand, sessionPath });
+        const workspaces = snapshot.manifest.instances[index].workspaces;
+        if (workspaces === undefined) await launch();
+        else await this._tracker.restoreWorkspaces({ launch, workspaces });
       }
       if (!this._stopped) {
         const count = snapshot.sessionPaths.length;
@@ -154,14 +160,18 @@ export class SessionController {
 
   async _capture(reason) {
     if (this._stopped || this._saving) return;
-    const pids = this._tracker.kittyPids();
-    if (pids.length === 0) return;
+    const instances = this._tracker.kittyInstances();
+    if (instances.length === 0) return;
 
     this._saving = true;
     this._setStatus('saving');
     try {
       const kittenCommand = this._settings.get_string(SETTINGS_KEYS.kittenCommand);
       const socketTemplate = this._settings.get_string(SETTINGS_KEYS.socketTemplate);
+      const resumeForegroundProcesses = this._settings.get_boolean(
+        SETTINGS_KEYS.resumeForegroundProcesses,
+      );
+      const autoRunCommands = this._settings.get_strv(SETTINGS_KEYS.autoRunCommands);
       const environment = {
         runtimeDir: GLib.get_user_runtime_dir(),
         uid: unixUserId(),
@@ -174,9 +184,13 @@ export class SessionController {
             destination,
             kittenCommand,
             socketAddress,
+            useForegroundProcesses: resumeForegroundProcesses,
           });
         },
-        pids,
+        instances,
+        processSession: resumeForegroundProcesses
+          ? (sessionContents) => prepareSavedSession(sessionContents, autoRunCommands)
+          : null,
         reason,
       });
 

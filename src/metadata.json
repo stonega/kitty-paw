@@ -1,8 +1,8 @@
 {
-  "description": "Automatically saves Kitty window layouts and restores the latest session from a GNOME panel button.",
+  "description": "Saves and restores Kitty layouts, workspaces, allowlisted foreground commands, and exact per-tab Codex threads through optional hooks.",
   "name": "Kitty Session Restorer",
   "settings-schema": "org.gnome.shell.extensions.kitty-session-restorer",
   "shell-version": ["50"],
   "uuid": "kitty-session-restorer@stone.dev",
-  "version": 1
+  "version": 2
 }

@@ -2,7 +2,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import { MANIFEST_VERSION, SNAPSHOT_SLOTS, STATE_DIRECTORY_NAME } from './constants.js';
-import { chooseInactiveSlot, validateManifest } from './policy.js';
+import { chooseInactiveSlot, validateManifest, validateWorkspaceAssignments } from './policy.js';
 
 const CURRENT_POINTER = 'current';
 const MANIFEST_FILE = 'manifest.json';
@@ -77,15 +77,36 @@ function sessionFilename(index) {
   return `instance-${String(index + 1).padStart(3, '0')}.session`;
 }
 
+function normalizeInstances(instances) {
+  if (!Array.isArray(instances))
+    throw new Error('Kitty capture instances must be provided as an array.');
+
+  const uniqueInstances = new Map();
+  for (const instance of instances) {
+    if (!instance || !Number.isSafeInteger(instance.pid) || instance.pid <= 0)
+      throw new Error('Kitty instance PIDs must be positive integers.');
+    if (instance.workspaces !== undefined && !validateWorkspaceAssignments(instance.workspaces))
+      throw new Error('Kitty workspace assignments are invalid.');
+    if (!uniqueInstances.has(instance.pid)) {
+      uniqueInstances.set(instance.pid, {
+        pid: instance.pid,
+        ...(instance.workspaces === undefined ? {} : { workspaces: [...instance.workspaces] }),
+      });
+    }
+  }
+
+  return [...uniqueInstances.values()].sort((left, right) => left.pid - right.pid);
+}
+
 export class SnapshotStore {
   constructor({ baseDirectory = null } = {}) {
     this.baseDirectory =
       baseDirectory ?? GLib.build_filenamev([GLib.get_user_state_dir(), STATE_DIRECTORY_NAME]);
   }
 
-  async capture({ pids, reason, captureInstance }) {
-    const orderedPids = [...new Set(pids)].sort((left, right) => left - right);
-    if (orderedPids.length === 0) throw new Error('No Kitty instances are available to save.');
+  async capture({ instances: captureInstances, reason, captureInstance, processSession = null }) {
+    const orderedInstances = normalizeInstances(captureInstances);
+    if (orderedInstances.length === 0) throw new Error('No Kitty instances are available to save.');
 
     ensureDirectory(this.baseDirectory);
     const activeSlot = this._readCurrentSlot();
@@ -97,12 +118,20 @@ export class SnapshotStore {
 
     try {
       const instances = [];
-      for (const [index, pid] of orderedPids.entries()) {
+      for (const [index, instance] of orderedInstances.entries()) {
         const file = sessionFilename(index);
         const destination = GLib.build_filenamev([targetDirectory, file]);
-        await captureInstance(pid, destination);
+        await captureInstance(instance.pid, destination);
+        if (processSession) {
+          const sessionContents = readText(destination);
+          if (sessionContents === null) throw new Error('Could not read saved Kitty session.');
+          const processedContents = processSession(sessionContents);
+          if (typeof processedContents !== 'string')
+            throw new Error('Kitty session processing produced invalid output.');
+          if (processedContents !== sessionContents) writeText(destination, processedContents);
+        }
         assertSessionFile(destination);
-        instances.push({ file, pid });
+        instances.push({ file, ...instance });
       }
 
       const manifest = {

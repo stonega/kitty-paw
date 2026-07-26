@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-
+import {
+  CODEX_HOOK_COMMAND,
+  hasConfiguredCodexHooks,
+  mergeCodexHooksConfig,
+} from '../src/lib/codexHooks.js';
+import {
+  CODEX_THREAD_VARIABLE,
+  codexSessionEventFromHookInput,
+  codexThreadIdFromHookInput,
+  isCodexThreadId,
+} from '../src/lib/codexSession.js';
 import {
   chooseInactiveSlot,
+  collectKittyInstances,
   collectKittyPids,
   expandSocketTemplate,
   matchesKittyWindow,
@@ -9,6 +20,12 @@ import {
   restoreDecision,
   validateManifest,
 } from '../src/lib/policy.js';
+import {
+  isAutoRunCommandAllowed,
+  normalizeAutoRunCommands,
+  prepareSavedSession,
+  resumeCodexThreads,
+} from '../src/lib/sessionFile.js';
 
 describe('window policy', () => {
   test('normalizes and matches all supported identifiers', () => {
@@ -33,6 +50,34 @@ describe('window policy', () => {
     ];
     expect(collectKittyPids(windows, ['kitty', 'kitty.desktop'])).toEqual([12, 44]);
   });
+
+  test('collects workspaces in stable window creation order', () => {
+    const windows = [
+      {
+        appId: 'kitty.desktop',
+        pid: 44,
+        stableSequence: 20,
+        workspaceIndex: 3,
+      },
+      {
+        appId: 'kitty.desktop',
+        pid: 12,
+        stableSequence: 30,
+        workspaceIndex: -1,
+      },
+      {
+        appId: 'kitty.desktop',
+        pid: 44,
+        stableSequence: 10,
+        workspaceIndex: 1,
+      },
+    ];
+
+    expect(collectKittyInstances(windows, ['kitty.desktop'])).toEqual([
+      { pid: 12, workspaces: [null] },
+      { pid: 44, workspaces: [1, 3] },
+    ]);
+  });
 });
 
 describe('socket policy', () => {
@@ -55,8 +100,8 @@ describe('socket policy', () => {
 describe('snapshot policy', () => {
   const manifest = {
     instances: [
-      { file: 'instance-001.session', pid: 12 },
-      { file: 'instance-002.session', pid: 44 },
+      { file: 'instance-001.session', pid: 12, workspaces: [null] },
+      { file: 'instance-002.session', pid: 44, workspaces: [1, 3] },
     ],
     reason: 'periodic',
     savedAt: '2026-07-22T12:00:00.000Z',
@@ -81,6 +126,24 @@ describe('snapshot policy', () => {
         ],
       }),
     ).toBe(false);
+    expect(
+      validateManifest({
+        ...manifest,
+        instances: [{ file: 'instance-001.session', pid: 12, workspaces: [-1] }],
+      }),
+    ).toBe(false);
+    expect(
+      validateManifest({
+        ...manifest,
+        instances: [{ file: 'instance-001.session', pid: 12, workspaces: [] }],
+      }),
+    ).toBe(false);
+    expect(
+      validateManifest({
+        ...manifest,
+        instances: [{ file: 'instance-001.session', pid: 12 }],
+      }),
+    ).toBe(true);
   });
 
   test('alternates slots and computes restore decisions', () => {
@@ -97,6 +160,152 @@ describe('snapshot policy', () => {
     );
     expect(restoreDecision({ hasKittyWindows: false, hasSnapshot: true, isRestoring: false })).toBe(
       'ready',
+    );
+  });
+});
+
+describe('saved foreground commands', () => {
+  const firstThreadId = '019c0123-4567-789a-bcde-f0123456789a';
+  const secondThreadId = '019c9876-5432-7fed-ba98-76543210fedc';
+
+  test('resumes the exact Codex thread saved for each Kitty window', () => {
+    const session = [
+      `launch 'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/codex"]}' --var=${CODEX_THREAD_VARIABLE}=${firstThreadId}`,
+      `launch 'kitty-unserialize-data={"id":5,"cmd_at_shell_startup":["codex"]}' --var=${CODEX_THREAD_VARIABLE}=${secondThreadId}`,
+      '',
+    ].join('\n');
+
+    const resumed = resumeCodexThreads(session);
+    expect(resumed).toContain(
+      `"cmd_at_shell_startup":["/usr/bin/codex","resume","${firstThreadId}"]`,
+    );
+    expect(resumed).toContain(`"cmd_at_shell_startup":["codex","resume","${secondThreadId}"]`);
+    expect(resumeCodexThreads(resumed)).toBe(resumed);
+  });
+
+  test('opens the Codex resume picker when exact thread metadata is unavailable', () => {
+    const session =
+      'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/codex"]}\'\n';
+    expect(resumeCodexThreads(session)).toBe(
+      'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/codex","resume"]}\'\n',
+    );
+  });
+
+  test('leaves other and explicitly configured commands unchanged', () => {
+    const neovim =
+      'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["nvim","it\'"\'"\'s.txt"]}\'';
+    const explicitCodex =
+      'launch \'kitty-unserialize-data={"id":5,"cmd_at_shell_startup":["codex","resume","thread-id"]}\'';
+
+    expect(resumeCodexThreads(neovim)).toBe(neovim);
+    expect(resumeCodexThreads(explicitCodex)).toBe(explicitCodex);
+  });
+
+  test('keeps only foreground commands in the auto-run allowlist', () => {
+    const session = [
+      'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/nvim","notes.md"]}\'',
+      'launch \'kitty-unserialize-data={"id":5,"cmd_at_shell_startup":["make","deploy"]}\'',
+      'launch \'kitty-unserialize-data={"id":6,"cmd_at_shell_startup":["/opt/tools/task"]}\'',
+    ].join('\n');
+
+    const prepared = prepareSavedSession(session, ['nvim', '/opt/tools/task']);
+    expect(prepared).toContain('"cmd_at_shell_startup":["/usr/bin/nvim","notes.md"]');
+    expect(prepared).toContain('kitty-unserialize-data={"id":5}');
+    expect(prepared).not.toContain('"make","deploy"');
+    expect(prepared).toContain('"cmd_at_shell_startup":["/opt/tools/task"]');
+  });
+
+  test('normalizes allowlist entries and matches names or exact paths', () => {
+    expect(normalizeAutoRunCommands([' codex ', '', 'codex', null, 'nvim'])).toEqual([
+      'codex',
+      'nvim',
+    ]);
+    expect(isAutoRunCommandAllowed(['/usr/bin/codex'], ['codex'])).toBe(true);
+    expect(isAutoRunCommandAllowed(['/usr/bin/codex'], ['/usr/bin/codex'])).toBe(true);
+    expect(isAutoRunCommandAllowed(['/usr/local/bin/codex'], ['/usr/bin/codex'])).toBe(false);
+    expect(isAutoRunCommandAllowed(['make', 'deploy'], ['codex'])).toBe(false);
+  });
+
+  test('rejects malformed serialized commands instead of publishing them unsanitized', () => {
+    expect(() =>
+      prepareSavedSession("launch 'kitty-unserialize-data={invalid}'", ['codex']),
+    ).toThrow('Could not sanitize');
+    expect(() =>
+      prepareSavedSession('launch \'kitty-unserialize-data={"id":4}', ['codex']),
+    ).toThrow('Could not parse');
+  });
+});
+
+describe('Codex session hook metadata', () => {
+  const threadId = '019c0123-4567-789a-bcde-f0123456789a';
+
+  test('accepts only a SessionStart payload with a UUID thread id', () => {
+    expect(
+      codexThreadIdFromHookInput(
+        JSON.stringify({
+          hook_event_name: 'SessionStart',
+          session_id: threadId,
+        }),
+      ),
+    ).toBe(threadId);
+    expect(
+      codexThreadIdFromHookInput(
+        JSON.stringify({
+          hook_event_name: 'SessionEnd',
+          session_id: threadId,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      codexSessionEventFromHookInput(
+        JSON.stringify({
+          hook_event_name: 'SessionEnd',
+          session_id: threadId,
+        }),
+      ),
+    ).toEqual({ name: 'SessionEnd', threadId });
+    expect(codexThreadIdFromHookInput('{invalid')).toBeNull();
+    expect(isCodexThreadId('--last')).toBe(false);
+  });
+});
+
+describe('Codex hooks configuration', () => {
+  test('merges managed hooks without replacing unrelated hooks', () => {
+    const existingHook = {
+      command: '/usr/bin/notify-existing-hook',
+      type: 'command',
+    };
+    const merged = mergeCodexHooksConfig({
+      custom: true,
+      hooks: {
+        SessionStart: [{ hooks: [existingHook], matcher: 'startup' }],
+        UserPromptSubmit: [{ hooks: [existingHook] }],
+      },
+    });
+
+    expect(merged.custom).toBe(true);
+    expect(merged.hooks.SessionStart[0].hooks[0]).toEqual(existingHook);
+    expect(merged.hooks.UserPromptSubmit[0].hooks[0]).toEqual(existingHook);
+    expect(hasConfiguredCodexHooks(merged)).toBe(true);
+    expect(merged.hooks.SessionStart.at(-1).hooks[0].command).toBe(CODEX_HOOK_COMMAND);
+  });
+
+  test('updates managed entries idempotently', () => {
+    const once = mergeCodexHooksConfig({});
+    const twice = mergeCodexHooksConfig(once);
+
+    expect(twice).toEqual(once);
+    expect(
+      twice.hooks.SessionStart.flatMap((group) => group.hooks).filter(
+        (hook) => hook.command === CODEX_HOOK_COMMAND,
+      ),
+    ).toHaveLength(1);
+  });
+
+  test('rejects malformed hooks collections', () => {
+    expect(() => mergeCodexHooksConfig({ hooks: [] })).toThrow('must be an object');
+    expect(() => mergeCodexHooksConfig({ hooks: { SessionStart: {} } })).toThrow(
+      'must be an array',
     );
   });
 });

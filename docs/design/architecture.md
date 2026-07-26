@@ -6,7 +6,8 @@ The GNOME Shell entry point owns a panel button and a `SessionController`. The
 controller coordinates three narrow services:
 
 - `KittyWindowTracker` identifies Kitty windows through GNOME's application ID,
-  WM_CLASS, and process metadata.
+  WM_CLASS, and process metadata. It owns a `WorkspaceRestorer` that waits for
+  newly launched windows and applies their saved Mutter workspaces.
 - `KittyClient` invokes Kitty and Kitten through asynchronous `Gio.Subprocess`
   argument arrays. No shell interprets settings or paths.
 - `SnapshotStore` maintains private, versioned state below
@@ -23,9 +24,35 @@ one save may execute at a time. Internal Kitty changes such as a new tab or
 working-directory change are caught by the periodic timer because GNOME does
 not receive those events.
 
-The tracker returns one PID per Kitty process. For every process, Kitten invokes
-the global `save_as_session --save-only` action over its remote-control socket.
-Each process produces one session file containing all of its OS windows.
+The tracker returns one PID per Kitty process plus the GNOME workspace index of
+each OS window, ordered by Mutter's stable window-creation sequence. For every
+process, Kitten invokes the global `save_as_session --save-only` action over its
+remote-control socket. Each process produces one session file containing all of
+its OS windows.
+
+When foreground-program restoration is enabled, the client adds Kitty's
+`--use-foreground-process` option. Kitty then serializes the active command line
+for windows that started as shells. Before publishing the snapshot, a pure
+session-file transform removes `cmd_at_shell_startup` from every command not in
+the `auto-run-commands` allowlist. Kitty consequently starts the configured
+shell in that window instead of the captured program. Allowlist entries without
+a slash match an executable basename at any path; entries containing a slash
+match the exact path.
+
+For an allowed bare `codex` command, the same transform emits `codex resume
+<thread-id>` when exact thread metadata is available. Explicit Codex commands
+are left as Kitty serialized them.
+
+Exact Codex matching uses user-configured Codex `SessionStart` and `SessionEnd`
+hooks packaged with the extension. Codex supplies the current session UUID to
+the hooks, and Kitty supplies `KITTY_WINDOW_ID`. The start hook writes the UUID
+to that window as a namespaced Kitty user variable, while the end hook clears
+it only if the window still holds the ending thread's UUID. Kitty's session
+serializer preserves the variable on the matching `launch` entry, allowing the
+pure transform to bind each window to its own thread even when several tabs
+share a working directory. The hooks never read the transcript. When metadata
+is absent or malformed, the transform emits `codex resume` so Codex shows its
+picker instead of guessing with `--last`.
 
 ## Atomic snapshot state
 
@@ -42,20 +69,38 @@ The manifest format is:
   "version": 1,
   "savedAt": "2026-07-22T12:00:00.000Z",
   "reason": "periodic",
-  "instances": [{ "pid": 12345, "file": "instance-001.session" }]
+  "instances": [
+    {
+      "pid": 12345,
+      "file": "instance-001.session",
+      "workspaces": [0, 2]
+    }
+  ]
 }
 ```
 
 Stored PIDs are diagnostic metadata only. They are never trusted or reused
-during restore.
+during restore. `workspaces` is optional so snapshots created before workspace
+capture was introduced remain valid. A `null` entry means GNOME did not expose
+a usable workspace for that window when the snapshot was taken.
 
 ## Restore flow
 
 A click checks current GNOME windows and blocks restore if Kitty is already
 open. With a valid snapshot, the controller launches one detached Kitty process
-per saved instance using `kitty --detach --session <file>`. A restore is guarded
-against repeated clicks. Partial launch failures are reported and never alter
-the saved snapshot.
+per saved instance using `kitty --detach --session <file>`. The tracker waits a
+bounded amount of time for that instance's OS windows, matches them in stable
+creation order, creates missing GNOME workspaces when necessary, and moves each
+window to its saved workspace without switching the user's active workspace.
+Legacy snapshots without workspace metadata retain GNOME's default placement.
+A restore is guarded against repeated clicks. Partial launch failures are
+reported and never alter the saved snapshot.
+
+Foreground-program capture is disabled by default because restoring a session
+re-runs serialized commands. When enabled, only the user-managed allowlist may
+restart. `codex` is the default entry; users can add interactive programs such
+as editors, but should not allow commands whose external side effects are
+unsafe to repeat.
 
 ## Lifecycle and failure handling
 

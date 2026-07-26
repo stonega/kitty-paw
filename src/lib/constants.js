@@ -5,9 +5,11 @@ export const STATE_DIRECTORY_NAME = 'kitty-session-restorer';
 export const MANIFEST_VERSION = 1;
 
 export const SETTINGS_KEYS = Object.freeze({
+  autoRunCommands: 'auto-run-commands',
   autosaveInterval: 'autosave-interval-seconds',
   kittyCommand: 'kitty-command',
   kittenCommand: 'kitten-command',
+  resumeForegroundProcesses: 'resume-foreground-processes',
   socketTemplate: 'socket-template',
   windowIdentifiers: 'kitty-window-identifiers',
 });

@@ -13,6 +13,16 @@
       <summary>Kitty executable</summary>
       <description>An executable name on PATH or an absolute path to Kitty.</description>
     </key>
+    <key name="resume-foreground-processes" type="b">
+      <default>false</default>
+      <summary>Restart foreground processes</summary>
+      <description>Save foreground commands so Kitty can restart commands included in the auto-run allowlist.</description>
+    </key>
+    <key name="auto-run-commands" type="as">
+      <default>['codex']</default>
+      <summary>Auto-run command allowlist</summary>
+      <description>Executable names or absolute paths that may be restarted from a saved Kitty session.</description>
+    </key>
     <key name="kitten-command" type="s">
       <default>'kitten'</default>
       <summary>Kitten executable</summary>

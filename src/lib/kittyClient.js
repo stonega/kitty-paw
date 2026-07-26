@@ -35,9 +35,9 @@ export class KittyClient {
     this._stopped = false;
   }
 
-  async saveSession({ kittenCommand, socketAddress, destination }) {
+  async saveSession({ kittenCommand, socketAddress, destination, useForegroundProcesses = false }) {
     const executable = executablePath(kittenCommand);
-    await this._run([
+    const argv = [
       executable,
       '@',
       '--to',
@@ -45,8 +45,10 @@ export class KittyClient {
       'action',
       'save_as_session',
       '--save-only',
-      destination,
-    ]);
+    ];
+    if (useForegroundProcesses) argv.push('--use-foreground-process');
+    argv.push(destination);
+    await this._run(argv);
   }
 
   async launchSession({ kittyCommand, sessionPath }) {

@@ -3,16 +3,9 @@ import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
-
+import { codexHookStatus, installCodexHooks } from './lib/codexHookInstaller.js';
 import { SETTINGS_KEYS } from './lib/constants.js';
-
-function addEntry(group, settings, key, title, subtitle) {
-  const row = new Adw.EntryRow({ title });
-  row.add_suffix(new Gtk.Image({ icon_name: 'document-edit-symbolic', tooltip_text: subtitle }));
-  settings.bind(key, row, 'text', Gio.SettingsBindFlags.DEFAULT);
-  group.add(row);
-  return row;
-}
+import { normalizeAutoRunCommands } from './lib/sessionFile.js';
 
 export default class KittySessionRestorerPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window) {
@@ -27,8 +20,7 @@ export default class KittySessionRestorerPreferences extends ExtensionPreference
     window.add(page);
 
     const savingGroup = new Adw.PreferencesGroup({
-      description:
-        'Session structure and working directories are saved. Foreground programs are not restarted.',
+      description: 'Session structure, working directories, and GNOME workspaces are always saved.',
       title: 'Session saving',
     });
     page.add(savingGroup);
@@ -55,56 +47,119 @@ export default class KittySessionRestorerPreferences extends ExtensionPreference
     });
     savingGroup.add(intervalRow);
 
-    const commandsGroup = new Adw.PreferencesGroup({
-      description: 'Use an executable name on GNOME Shell’s PATH or an absolute path.',
-      title: 'Commands',
+    const foregroundRow = new Adw.SwitchRow({
+      subtitle:
+        'Only commands in the allowlist below may run. Other windows reopen with a normal shell.',
+      title: 'Restart allowed foreground programs',
     });
-    page.add(commandsGroup);
-    addEntry(
-      commandsGroup,
-      settings,
-      SETTINGS_KEYS.kittyCommand,
-      'Kitty executable',
-      'Used to launch a saved session.',
+    settings.bind(
+      SETTINGS_KEYS.resumeForegroundProcesses,
+      foregroundRow,
+      'active',
+      Gio.SettingsBindFlags.DEFAULT,
     );
-    addEntry(
-      commandsGroup,
-      settings,
-      SETTINGS_KEYS.kittenCommand,
-      'Kitten executable',
-      'Used to request a session snapshot over Kitty remote control.',
-    );
+    savingGroup.add(foregroundRow);
 
-    const detectionGroup = new Adw.PreferencesGroup({
+    const allowlistGroup = new Adw.PreferencesGroup({
       description:
-        'The socket template must include {pid}. It may also include {runtimeDir} and {uid}.',
-      title: 'Kitty detection and remote control',
+        'Add executable names such as codex or nvim, or exact absolute paths. Arguments are preserved from the saved session.',
+      title: 'Auto-run command allowlist',
     });
-    page.add(detectionGroup);
-    addEntry(
-      detectionGroup,
-      settings,
-      SETTINGS_KEYS.socketTemplate,
-      'Socket template',
-      'Default: unix:/tmp/kitty-{pid}',
-    );
+    page.add(allowlistGroup);
 
-    const identifiersRow = new Adw.EntryRow({ title: 'Window identifiers' });
-    identifiersRow.text = settings.get_strv(SETTINGS_KEYS.windowIdentifiers).join(', ');
-    identifiersRow.connect('changed', () => {
-      const identifiers = identifiersRow.text
-        .split(',')
-        .map((identifier) => identifier.trim())
-        .filter(Boolean);
-      settings.set_strv(SETTINGS_KEYS.windowIdentifiers, identifiers);
+    const addCommandRow = new Adw.EntryRow({
+      title: 'Executable name or absolute path',
     });
-    detectionGroup.add(identifiersRow);
+    const addCommandButton = new Gtk.Button({
+      icon_name: 'list-add-symbolic',
+      tooltip_text: 'Add command',
+      valign: Gtk.Align.CENTER,
+    });
+    addCommandRow.add_suffix(addCommandButton);
 
-    const securityRow = new Adw.ActionRow({
-      subtitle: 'Recommended Kitty setting: allow_remote_control socket-only',
-      title: 'Use socket-only remote control',
+    let commandRows = [];
+    let addCommandRowAttached = false;
+    const rebuildCommandRows = () => {
+      for (const row of commandRows) allowlistGroup.remove(row);
+      commandRows = [];
+      if (addCommandRowAttached) allowlistGroup.remove(addCommandRow);
+
+      for (const command of normalizeAutoRunCommands(
+        settings.get_strv(SETTINGS_KEYS.autoRunCommands),
+      )) {
+        const row = new Adw.ActionRow({
+          subtitle: command.includes('/')
+            ? 'Only this exact executable path may restart.'
+            : `Matches ${command} at any executable path.`,
+          title: command,
+        });
+        row.add_prefix(new Gtk.Image({ icon_name: 'system-run-symbolic' }));
+        const removeButton = new Gtk.Button({
+          icon_name: 'list-remove-symbolic',
+          tooltip_text: `Remove ${command}`,
+          valign: Gtk.Align.CENTER,
+        });
+        removeButton.add_css_class('flat');
+        removeButton.connect('clicked', () => {
+          const updated = normalizeAutoRunCommands(
+            settings.get_strv(SETTINGS_KEYS.autoRunCommands),
+          ).filter((candidate) => candidate !== command);
+          settings.set_strv(SETTINGS_KEYS.autoRunCommands, updated);
+        });
+        row.add_suffix(removeButton);
+        commandRows.push(row);
+        allowlistGroup.add(row);
+      }
+      allowlistGroup.add(addCommandRow);
+      addCommandRowAttached = true;
+    };
+
+    const addCommand = () => {
+      const command = addCommandRow.text.trim();
+      if (!command || command.includes('\0')) return;
+      const updated = normalizeAutoRunCommands([
+        ...settings.get_strv(SETTINGS_KEYS.autoRunCommands),
+        command,
+      ]);
+      settings.set_strv(SETTINGS_KEYS.autoRunCommands, updated);
+      addCommandRow.text = '';
+    };
+    addCommandButton.connect('clicked', addCommand);
+    settings.connect(`changed::${SETTINGS_KEYS.autoRunCommands}`, rebuildCommandRows);
+    rebuildCommandRows();
+
+    const codexGroup = new Adw.PreferencesGroup({
+      description:
+        'The hook records each Codex thread UUID on its own Kitty window so tabs in the same project resume independently.',
+      title: 'Codex CLI integration',
     });
-    securityRow.add_prefix(new Gtk.Image({ icon_name: 'security-high-symbolic' }));
-    detectionGroup.add(securityRow);
+    page.add(codexGroup);
+
+    const codexHookRow = new Adw.ActionRow({
+      title: 'Exact per-tab Codex resume',
+    });
+    codexHookRow.add_prefix(new Gtk.Image({ icon_name: 'utilities-terminal-symbolic' }));
+    const codexHookButton = new Gtk.Button({
+      label: 'Install / Update Hooks',
+      valign: Gtk.Align.CENTER,
+    });
+    codexHookRow.add_suffix(codexHookButton);
+    codexHookRow.activatable_widget = codexHookButton;
+    codexGroup.add(codexHookRow);
+
+    const refreshCodexHookStatus = () => {
+      const status = codexHookStatus();
+      codexHookRow.subtitle = status.detail;
+      codexHookButton.label = status.configured ? 'Update Hooks' : 'Install Hooks';
+    };
+    codexHookButton.connect('clicked', () => {
+      try {
+        installCodexHooks();
+        refreshCodexHookStatus();
+      } catch (error) {
+        codexHookRow.subtitle = `Could not configure hooks: ${error.message ?? String(error)}`;
+      }
+    });
+    refreshCodexHookStatus();
   }
 }

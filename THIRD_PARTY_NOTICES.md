@@ -2,13 +2,14 @@
 
 ## Kitty paw icon
 
-The paw icon in `src/icons/kitty-paw-symbolic.svg` is from Font Awesome Solid by
-Dave Gandy. It was supplied for this project as SVG path data and retains its
-original attribution in the source file.
+The paw icon in `src/icons/kitty-paw-symbolic.svg` is from Firefox OS Emoji by
+Mozilla.
 
 - License: Creative Commons Attribution 4.0 International (CC BY 4.0)
 - License text: <https://creativecommons.org/licenses/by/4.0/legalcode>
-- Project: <https://fontawesome.com/>
+- Project: <https://mozilla.github.io/fxemoji/>
+- Source license notice: <https://mozilla.github.io/fxemoji/LICENSE.md>
 
-The icon is used unmodified except for symbolic-icon markup and accessibility
-metadata surrounding the original path.
+The original `#464A4C` fill was changed to `currentColor` so GNOME Shell can
+apply panel and error-state colors. Symbolic-icon markup and accessibility
+metadata surround the original path.
