@@ -130,7 +130,7 @@ export default class KittySessionRestorerPreferences extends ExtensionPreference
 
     const codexGroup = new Adw.PreferencesGroup({
       description:
-        'The hook records each Codex thread UUID on its own Kitty window so tabs in the same project resume independently.',
+        'Start Codex with --no-daemon for exact per-tab recovery. Shared or remote app servers cannot identify the calling Kitty window.',
       title: 'Codex CLI integration',
     });
     page.add(codexGroup);

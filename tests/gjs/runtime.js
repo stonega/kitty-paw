@@ -9,6 +9,7 @@ import { SessionController } from '../../src/lib/sessionController.js';
 import { prepareSavedSession } from '../../src/lib/sessionFile.js';
 import { SnapshotStore } from '../../src/lib/snapshotStore.js';
 import { WorkspaceRestorer } from '../../src/lib/workspaceRestorer.js';
+import { runCodexConfigTests } from './codexIntegration.js';
 import { runPerformanceTests } from './performance.js';
 
 function assert(condition, message) {
@@ -24,6 +25,11 @@ function readText(path) {
   const [ok, contents] = GLib.file_get_contents(path);
   if (!ok) throw new Error(`Could not read ${path}`);
   return new TextDecoder().decode(contents);
+}
+
+function mockCodexHook(hookPath, mode = 'resume') {
+  const command = `gjs -m ${GLib.shell_quote(hookPath)}; status=$?; exit "$status"`;
+  return ['bash', '-c', 'exec -a codex bash -c "$1" "$2"', 'mock-codex', command, mode];
 }
 
 function removeTree(path) {
@@ -53,6 +59,12 @@ const fakeKitty = GLib.build_filenamev([temporaryDirectory, 'fake-kitty']);
 const hookLog = GLib.build_filenamev([temporaryDirectory, 'hook.log']);
 const launchLog = GLib.build_filenamev([temporaryDirectory, 'launch.log']);
 const threadId = '019c0123-4567-789a-bcde-f0123456789a';
+const capturedSession = `launch ${GLib.shell_quote(
+  `kitty-unserialize-data=${JSON.stringify({
+    id: 4,
+    cmd_at_shell_startup: '/usr/bin/codex --profile work resume --last "deploy again"',
+  })}`,
+)} --var=${CODEX_THREAD_VARIABLE}=${threadId}`;
 
 writeExecutable(
   fakeKitten,
@@ -64,7 +76,7 @@ destination=""
 for argument in "$@"; do destination="$argument"; done
 case "$*" in
   *--use-foreground-process*)
-    printf '%s\\n' "launch 'kitty-unserialize-data={\\"id\\":4,\\"cmd_at_shell_startup\\":[\\"/usr/bin/codex\\",\\"--profile\\",\\"work\\",\\"resume\\",\\"--last\\",\\"deploy again\\"]}' --var=${CODEX_THREAD_VARIABLE}=${threadId}" > "$destination"
+    printf '%s\\n' ${GLib.shell_quote(capturedSession)} > "$destination"
     ;;
   *)
     printf 'new_tab saved\\nlayout tall\\nlaunch\\n' > "$destination"
@@ -127,11 +139,13 @@ try {
   hookLauncher.setenv('KITTY_WINDOW_ID', '42', true);
   hookLauncher.setenv('KITTY_SESSION_RESTORER_KITTEN_COMMAND', fakeHookKitten, true);
   hookLauncher.setenv('KITTY_TEST_HOOK_LOG', hookLog, true);
-  const hookProcess = hookLauncher.spawnv([
-    'gjs',
-    '-m',
-    GLib.build_filenamev([GLib.get_current_dir(), 'src', 'lib', 'codexSessionHook.js']),
+  const hookPath = GLib.build_filenamev([
+    GLib.get_current_dir(),
+    'src',
+    'lib',
+    'codexSessionHook.js',
   ]);
+  const hookProcess = hookLauncher.spawnv(mockCodexHook(hookPath));
   const [, hookStderr] = await hookProcess.communicate_utf8_async(
     JSON.stringify({
       hook_event_name: 'SessionStart',
@@ -149,11 +163,7 @@ try {
       `@ set-user-vars --match id:42 ${CODEX_THREAD_VARIABLE}=${threadId}`,
     'Codex session hook did not attach the exact thread ID to its Kitty window.',
   );
-  const endHookProcess = hookLauncher.spawnv([
-    'gjs',
-    '-m',
-    GLib.build_filenamev([GLib.get_current_dir(), 'src', 'lib', 'codexSessionHook.js']),
-  ]);
+  const endHookProcess = hookLauncher.spawnv(mockCodexHook(hookPath));
   const [, endHookStderr] = await endHookProcess.communicate_utf8_async(
     JSON.stringify({
       hook_event_name: 'SessionEnd',
@@ -173,6 +183,19 @@ try {
       ),
     'Codex session end hook did not clear its Kitty window thread ID.',
   );
+
+  for (const mode of ['app-server', 'exec']) {
+    const previousLog = readText(hookLog);
+    const rejected = hookLauncher.spawnv(mockCodexHook(hookPath, mode));
+    const [, stderr] = await rejected.communicate_utf8_async(
+      JSON.stringify({ hook_event_name: 'SessionStart', session_id: threadId }),
+      null,
+    );
+    assert(!rejected.get_successful(), 'An unbound Codex process updated Kitty metadata.');
+    assert(stderr.includes('--no-daemon'), 'The hook omitted its local-client guidance.');
+    assert(readText(hookLog) === previousLog, 'A rejected hook changed Kitty metadata.');
+  }
+  await runCodexConfigTests(temporaryDirectory);
 
   const first = await store.capture({
     captureInstance: (pid, destination) =>

@@ -74,7 +74,9 @@ normal shell, even though Kitty captured their command lines.
 2. Click **Install Hooks** (or **Update Hooks** after upgrading). This merges
    the extension's `SessionStart` and `SessionEnd` hooks into `~/.codex/hooks.json`.
 3. Restart Codex, run `/hooks`, review the command, and trust it.
-4. Restart or resume Codex threads that were already open before setup.
+4. Start or resume each thread with `codex --no-daemon` (for example,
+   `codex --no-daemon resume <thread-id>`). This gives the hooks that tab's
+   environment instead of a shared app server's environment.
 5. Keep `codex` in the auto-run allowlist and enable foreground restoration.
 
 For manual setup, merge the entries from
@@ -86,6 +88,9 @@ and each snapshot saves it with that window's recovery command. Model, profile,
 and other supported options are retained. Without a valid UUID, new-session
 commands open the resume picker; explicit `resume` and `fork` commands retain
 their captured selection. See the [user guide](docs/user/guide.md) for details.
+
+Custom installations use `$CODEX_HOME/hooks.json` and `$XDG_DATA_HOME` for the
+installed extension, with the usual `~/.codex` and `~/.local/share` defaults.
 
 ## Development
 

@@ -6,8 +6,12 @@ export const METRICS = {};
 let indicatorFound = false;
 
 export async function run() {
-  await Scripting.sleep(1000);
-  const indicator = Main.panel.statusArea['kitty-session-restorer@stone.dev'];
+  let indicator = null;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    indicator = Main.panel.statusArea['kitty-session-restorer@stone.dev'];
+    if (indicator) break;
+    await Scripting.sleep(100);
+  }
   if (!indicator) throw new Error('Kitty Session Restorer did not register a panel indicator.');
   if (!indicator.visible) throw new Error('Kitty Session Restorer panel indicator is not visible.');
   if (!indicator.get_first_child())

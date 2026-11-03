@@ -35,7 +35,10 @@ function writeConfigAtomically(path, config) {
 }
 
 export function defaultCodexDirectory() {
-  return GLib.build_filenamev([GLib.get_home_dir(), '.codex']);
+  const configured = GLib.getenv('CODEX_HOME');
+  return configured
+    ? GLib.canonicalize_filename(configured, null)
+    : GLib.build_filenamev([GLib.get_home_dir(), '.codex']);
 }
 
 export function codexHookStatus(codexDirectory = defaultCodexDirectory()) {

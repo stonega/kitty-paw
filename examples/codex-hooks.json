@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "gjs -m \"$HOME/.local/share/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js\"",
+            "command": "gjs -m \"${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js\"",
             "timeout": 3,
             "statusMessage": "Linking this Codex thread to its Kitty tab"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "gjs -m \"$HOME/.local/share/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js\"",
+            "command": "gjs -m \"${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js\"",
             "timeout": 3,
             "statusMessage": "Clearing this Codex thread from its Kitty tab"
           }

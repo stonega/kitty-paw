@@ -77,7 +77,11 @@ in the `save_as_session` action. This requires Kitty shell integration. The
 preferences window.
 
 `src/lib/sessionFile.js` parses Kitty's shell-quoted serialized launch payloads
-without executing them. A command is retained only when its executable basename
+without executing them. `cmd_at_shell_startup` is usually a string when Kitty
+shell integration reported the command, and can also be an argument array when
+Kitty captured the process directly. Simple strings are tokenized with literal
+shell quoting and converted to arrays; shell operators, expansion, and invalid
+quoting are rejected. A command is retained only when its executable basename
 or exact path matches the allowlist; otherwise the serialized startup command
 is removed so Kitty opens its configured shell. For allowed interactive Codex
 commands, a valid `kitty_session_restorer_codex_thread_id` produces `codex resume
@@ -97,6 +101,15 @@ Codex `SessionStart` and `SessionEnd` hooks receive the current `session_id`.
 The start hook has no matcher, so it also tracks fork and compact events. See
 the official [hook event documentation](https://learn.chatgpt.com/docs/hooks#sessionstart)
 and [resume reference](https://developers.openai.com/codex/cli/reference#codex-resume).
+
+The hook checks at most 32 ancestors through Linux `/proc`, reading at most
+16 KiB from each process metadata file. The nearest Codex process must be an
+interactive client. Shared app servers and nested exec/review processes are
+rejected before Kitty is contacted, preventing their inherited terminal
+environment from overwriting another thread's metadata. The hook runs outside
+GNOME Shell. For current Codex, use `codex --no-daemon` for exact per-tab capture;
+see the upstream [shared daemon environment limitation](https://github.com/openai/codex/blob/main/codex-rs/app-server-daemon/README.md#platform-support).
+
 Processes inside a Kitty window inherit `KITTY_WINDOW_ID`. The packaged
 `lib/codexSessionHook.js` combines those identifiers. On start it invokes:
 
@@ -112,10 +125,12 @@ paths validate the identifiers, use argument arrays, and never read the Codex
 transcript.
 
 `src/lib/codexHookInstaller.js` powers **Install Hooks** in extension
-preferences. It parses the existing `~/.codex/hooks.json`, removes only earlier
+preferences. It parses the existing `$CODEX_HOME/hooks.json` (defaulting to
+`~/.codex/hooks.json`), removes only earlier
 copies of this extension's two hook commands, appends the current definitions,
 and atomically writes a private file. Unrelated properties, events, groups, and
 commands are preserved. Invalid JSON is reported without changing the file.
+The hook command honors `$XDG_DATA_HOME`, falling back to `~/.local/share`.
 
 After upgrading from hooks with a `startup|resume|clear` matcher, use **Update
 Hooks** to capture forks as well. After installation, Codex must be restarted

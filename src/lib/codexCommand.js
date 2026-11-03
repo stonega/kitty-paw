@@ -85,12 +85,15 @@ function interactiveOptions(args) {
           : argument;
       const hasValue = option !== argument;
       if (option === '-i' || option === '--image') {
-        if (!hasValue && ++index >= args.length) return null;
         // --image accepts multiple consecutive file arguments. The original
         // attachments (and any trailing prompt) already belong to the thread.
-        while (index + 1 < args.length && !args[index + 1].startsWith('-')) index += 1;
+        // An attached value (--image=file or -ifile) ends that option's values.
+        if (!hasValue) {
+          if (++index >= args.length || args[index].startsWith('-')) return null;
+          while (index + 1 < args.length && !args[index + 1].startsWith('-')) index += 1;
+        }
       } else if (VALUE_OPTIONS.has(option)) {
-        if (!hasValue && ++index >= args.length) return null;
+        if (!hasValue && (++index >= args.length || args[index].startsWith('-'))) return null;
         options.push(argument);
         if (!hasValue) options.push(args[index]);
       } else if (FLAG_OPTIONS.has(argument)) {
@@ -118,16 +121,30 @@ function interactiveOptions(args) {
   return { mode, options };
 }
 
-export function resumeCodexCommand(command, threadId) {
+function parsedCodexCommand(command) {
   if (
     !Array.isArray(command) ||
     command.length === 0 ||
     !command.every((word) => typeof word === 'string') ||
     command[0].split('/').at(-1) !== 'codex'
   )
-    return command;
+    return null;
 
-  const parsed = interactiveOptions(command.slice(1));
+  return interactiveOptions(command.slice(1));
+}
+
+export function hasLocalCodexClient(ancestorCommands) {
+  for (const command of ancestorCommands) {
+    if (command[0]?.split('/').at(-1) === 'codex')
+      // Stop at the nearest Codex process: nested execs and app servers must
+      // not overwrite an outer interactive client's Kitty metadata.
+      return parsedCodexCommand(command) !== null;
+  }
+  return false;
+}
+
+export function resumeCodexCommand(command, threadId) {
+  const parsed = parsedCodexCommand(command);
   const exactThread = isCodexThreadId(threadId);
   if (parsed === null || (parsed.mode !== null && !exactThread)) return command;
 

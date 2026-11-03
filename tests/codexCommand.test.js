@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resumeCodexCommand } from '../src/lib/codexCommand.js';
+import { hasLocalCodexClient, resumeCodexCommand } from '../src/lib/codexCommand.js';
 
 const threadId = '019c0123-4567-789a-bcde-f0123456789a';
 const oldThreadId = '019c9876-5432-7fed-ba98-76543210fedc';
@@ -61,11 +61,24 @@ describe('Codex recovery commands', () => {
     ).toEqual(['codex', 'resume', threadId, '-p', 'work']);
     expect(
       resumeCodexCommand(
-        ['codex', 'resume', oldThreadId, '--image=one.png', 'two.png', '--', 'follow up'],
+        ['codex', 'resume', oldThreadId, '--image', 'one.png', 'two.png', '--', 'follow up'],
         threadId,
       ),
     ).toEqual(['codex', 'resume', threadId]);
   });
+
+  test.each(['--image=one.png', '-ione.png'])(
+    'does not consume a subcommand after an attached image: %s',
+    (image) => {
+      const exec = ['codex', image, 'exec', 'deploy'];
+      expect(resumeCodexCommand(exec, threadId)).toBe(exec);
+      expect(resumeCodexCommand(['codex', image, 'resume', '--last'], threadId)).toEqual([
+        'codex',
+        'resume',
+        threadId,
+      ]);
+    },
+  );
 
   test.each([null, undefined, '', '--last', 'invalid-uuid'])(
     'uses the picker for a new session without a valid saved UUID: %j',
@@ -95,6 +108,8 @@ describe('Codex recovery commands', () => {
     ['codex', '--version'],
     ['codex', '--future-option', 'value'],
     ['codex', '--model'],
+    ['codex', '--model', '--help'],
+    ['codex', '--image', '--help'],
     ['codex', 'too', 'many', 'positionals'],
     ['codex', '--model', 42],
     ['nvim', 'file.txt'],
@@ -102,5 +117,26 @@ describe('Codex recovery commands', () => {
     [],
   ])('preserves other, unsupported, or malformed commands: %j', (...command) => {
     expect(resumeCodexCommand(command, threadId)).toBe(command);
+  });
+});
+
+describe('Codex hook process ownership', () => {
+  test('accepts an embedded interactive client through intermediary processes', () => {
+    expect(
+      hasLocalCodexClient([
+        ['/bin/sh', '-c', 'hook'],
+        ['/opt/bin/codex', '--no-daemon'],
+      ]),
+    ).toBe(true);
+  });
+
+  test('rejects shared servers and nested execs even with an outer interactive client', () => {
+    for (const command of [
+      ['codex', 'app-server', '--listen', 'unix:///tmp/server.sock'],
+      ['codex', 'exec', 'task'],
+      ['codex', 'review'],
+    ])
+      expect(hasLocalCodexClient([command, ['codex', '--no-daemon']])).toBe(false);
+    expect(hasLocalCodexClient([['/bin/sh', '-c', 'hook']])).toBe(false);
   });
 });

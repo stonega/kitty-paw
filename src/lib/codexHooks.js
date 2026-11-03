@@ -1,5 +1,4 @@
-export const CODEX_HOOK_COMMAND =
-  'gjs -m "$HOME/.local/share/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js"';
+export const CODEX_HOOK_COMMAND = `gjs -m "\${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/kitty-session-restorer@stone.dev/lib/codexSessionHook.js"`;
 
 const MANAGED_HOOK_PATH = '/kitty-session-restorer@stone.dev/lib/codexSessionHook.js';
 

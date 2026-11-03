@@ -25,6 +25,11 @@ explicit resume and fork commands keep their captured selection. Non-interactive
 Codex subcommands and commands with unrecognized options are relaunched as
 captured under the foreground allowlist policy.
 
+Simple shell command strings reported by Kitty shell integration are supported
+alongside argument arrays. Commands containing shell operators, variable
+expansion, globs, or invalid quoting reopen as a normal shell. Use a direct
+`codex --no-daemon` command for reliable capture.
+
 This restores commands, not in-memory application state. Unsaved editor
 buffers, scrollback, shell variables, and command history that has not been
 written by the shell are not captured.
@@ -69,7 +74,9 @@ nonstandard installations.
 2. Click **Install Hooks**, or **Update Hooks** after upgrading. Existing hooks
    and other configuration are preserved.
 3. Restart Codex, run `/hooks`, review the command, and trust it.
-4. Restart or resume each Codex thread that was already open before setup.
+4. Start or resume each thread with `codex --no-daemon`, for example
+   `codex --no-daemon resume <thread-id>`. Repeat this once for threads already
+   open before upgrading to replace any old window metadata.
 5. Keep `codex` in **Auto-run command allowlist** and enable
    **Restart allowed foreground programs**.
 
@@ -82,7 +89,20 @@ If the preferences installer reports invalid JSON, repair
 `~/.codex/hooks.json` and try again. For manual setup, merge the event entries
 from `examples/codex-hooks.json` without replacing unrelated hooks.
 
+If you set `CODEX_HOME`, the installer uses that directory's `hooks.json`.
+The hook also honors `XDG_DATA_HOME` for the installed extension's location.
+
 ## Troubleshooting
+
+### Codex reports that exact tracking requires a local interactive process
+
+Start Codex with `codex --no-daemon` and resume the intended thread. Shared
+background app servers reuse the environment of the terminal that started
+them, so their hooks cannot reliably identify the Kitty tab that attached later.
+The extension refuses those hook events rather than changing another tab's
+thread ID. Remote app servers and nested `codex exec` commands are also excluded
+from thread capture. Keep using `--no-daemon` for new sessions; the flag is
+preserved in recovery commands.
 
 ### Autosave appears to stall the desktop
 

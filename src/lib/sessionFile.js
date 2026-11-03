@@ -5,7 +5,7 @@ const SERIALIZED_LAUNCH_PREFIX = 'kitty-unserialize-data=';
 const SAFE_SHELL_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 const CODEX_THREAD_VARIABLE_PREFIX = `--var=${CODEX_THREAD_VARIABLE}=`;
 
-function parseShellWords(text) {
+function parseShellWords(text, simpleCommand = false) {
   const words = [];
   let current = '';
   let started = false;
@@ -21,13 +21,20 @@ function parseShellWords(text) {
     if (state === 'double') {
       if (character === '"') state = 'plain';
       else if (character === '\\' && index + 1 < text.length) {
-        index += 1;
-        current += text[index];
+        const next = text[index + 1];
+        if (!simpleCommand || '\\"$`\n'.includes(next)) {
+          index += 1;
+          if (!simpleCommand || next !== '\n') current += next;
+        } else current += character;
+      } else if (simpleCommand && '$`!'.includes(character)) {
+        throw new Error('Shell expansion cannot be restored as an argument array.');
       } else current += character;
       continue;
     }
 
-    if (/\s/.test(character)) {
+    if (simpleCommand && /[|&;<>()`$*?[\]{}~#!\n\r]/.test(character))
+      throw new Error('Only a simple foreground command can be restored.');
+    if ((simpleCommand ? /[ \t]/ : /\s/).test(character)) {
       if (started) {
         words.push(current);
         current = '';
@@ -41,8 +48,12 @@ function parseShellWords(text) {
       started = true;
     } else if (character === '\\' && index + 1 < text.length) {
       index += 1;
-      current += text[index];
-      started = true;
+      if (!simpleCommand || text[index] !== '\n') {
+        current += text[index];
+        started = true;
+      }
+    } else if (simpleCommand && character === '\\') {
+      throw new Error('Incomplete shell escape.');
     } else {
       current += character;
       started = true;
@@ -52,6 +63,19 @@ function parseShellWords(text) {
   if (state !== 'plain') throw new Error('Unterminated quoted session argument.');
   if (started) words.push(current);
   return words;
+}
+
+function foregroundCommandArgv(command) {
+  try {
+    const words = typeof command === 'string' ? parseShellWords(command, true) : command;
+    return Array.isArray(words) &&
+      words.length > 0 &&
+      words.every((word) => typeof word === 'string' && !word.includes('\0'))
+      ? words
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function quoteShellWord(word) {
@@ -72,10 +96,10 @@ export function normalizeAutoRunCommands(commands) {
 }
 
 export function isAutoRunCommandAllowed(command, allowedCommands) {
-  if (!Array.isArray(command) || typeof command[0] !== 'string' || command[0].length === 0)
-    return false;
+  const words = foregroundCommandArgv(command);
+  if (words === null || words[0].length === 0) return false;
 
-  const executable = command[0];
+  const executable = words[0];
   const executableName = executable.split('/').at(-1);
   return normalizeAutoRunCommands(allowedCommands).some((allowed) =>
     allowed.includes('/') ? executable === allowed : executableName === allowed,
@@ -107,13 +131,14 @@ function rewriteLaunch(line, allowedCommands, enforceAllowlist) {
 
   try {
     const serialized = JSON.parse(words[serializedIndex].slice(SERIALIZED_LAUNCH_PREFIX.length));
-    const command = serialized.cmd_at_shell_startup;
+    const originalCommand = serialized.cmd_at_shell_startup;
+    const command = foregroundCommandArgv(originalCommand);
     if (enforceAllowlist && !isAutoRunCommandAllowed(command, allowedCommands)) {
       if (!Object.hasOwn(serialized, 'cmd_at_shell_startup')) return line;
       delete serialized.cmd_at_shell_startup;
     } else {
       const resumed = resumeCodexCommand(command, savedCodexThreadId(words));
-      if (resumed === command) return line;
+      if (resumed === command && (!enforceAllowlist || command === originalCommand)) return line;
       serialized.cmd_at_shell_startup = resumed;
     }
     words[serializedIndex] = `${SERIALIZED_LAUNCH_PREFIX}${JSON.stringify(serialized)}`;

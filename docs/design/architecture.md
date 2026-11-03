@@ -42,6 +42,12 @@ shell in that window instead of the captured program. Allowlist entries without
 a slash match an executable basename at any path; entries containing a slash
 match the exact path.
 
+Kitty can serialize that startup command as a shell command string or an
+argument array. The transform parses simple strings into argument arrays before
+checking the allowlist. Quoted literal arguments and escaped spaces are
+preserved; shell expansion, compound commands, redirection, and malformed
+quoting fall back to the configured shell. Captured strings are never evaluated.
+
 For allowed interactive Codex commands, the same transform emits `codex resume
 <thread-id>` when exact thread metadata is available. This covers new sessions
 with options or a prompt, resume pickers, `resume --last`, explicit resume IDs,
@@ -64,6 +70,14 @@ share a working directory. The hooks never read the transcript. When metadata
 is absent or malformed, new-session commands become `codex resume` with their
 supported options so Codex shows its picker. Explicit resume and fork commands
 keep their captured selection when metadata is unavailable.
+
+Hooks only accept metadata from a local interactive Codex ancestor. They inspect
+a bounded chain of Linux process metadata in the separate hook process and
+reject shared/remote app servers and nested `codex exec` invocations. A shared
+Codex daemon inherits its startup environment, so `KITTY_WINDOW_ID` there does
+not reliably identify each attached client. Users should launch Codex with
+`--no-daemon` to keep the hook bound to its terminal. A rejected hook reports
+this requirement without changing window metadata.
 
 ## Atomic snapshot state
 
