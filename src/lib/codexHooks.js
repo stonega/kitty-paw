@@ -45,7 +45,6 @@ export function configuredCodexHooks() {
     SessionStart: [
       {
         hooks: [commandHook('Linking this Codex thread to its Kitty tab')],
-        matcher: 'startup|resume|clear',
       },
     ],
   };

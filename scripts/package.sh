@@ -18,7 +18,7 @@ gnome-extensions pack \
   "${source_dir}"
 
 test -s "${bundle}"
-for required_file in metadata.json extension.js prefs.js stylesheet.css icons/kitty-paw-symbolic.svg lib/codexHookInstaller.js lib/codexHooks.js lib/codexSession.js lib/codexSessionHook.js LICENSE THIRD_PARTY_NOTICES.md; do
+for required_file in metadata.json extension.js prefs.js stylesheet.css icons/kitty-paw-symbolic.svg lib/codexCommand.js lib/codexHookInstaller.js lib/codexHooks.js lib/codexSession.js lib/codexSessionHook.js LICENSE THIRD_PARTY_NOTICES.md; do
   unzip -Z1 "${bundle}" | grep -Fxq "${required_file}" || {
     echo "Package is missing ${required_file}" >&2
     exit 1

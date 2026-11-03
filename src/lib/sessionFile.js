@@ -1,3 +1,4 @@
+import { resumeCodexCommand } from './codexCommand.js';
 import { CODEX_THREAD_VARIABLE, isCodexThreadId } from './codexSession.js';
 
 const SERIALIZED_LAUNCH_PREFIX = 'kitty-unserialize-data=';
@@ -58,13 +59,6 @@ function quoteShellWord(word) {
   return `'${word.replaceAll("'", `'"'"'`)}'`;
 }
 
-function isBareCodexCommand(command) {
-  if (!Array.isArray(command) || command.length !== 1 || typeof command[0] !== 'string')
-    return false;
-  const executable = command[0].split('/').at(-1);
-  return executable === 'codex';
-}
-
 export function normalizeAutoRunCommands(commands) {
   if (!Array.isArray(commands)) return [];
   return [
@@ -117,12 +111,10 @@ function rewriteLaunch(line, allowedCommands, enforceAllowlist) {
     if (enforceAllowlist && !isAutoRunCommandAllowed(command, allowedCommands)) {
       if (!Object.hasOwn(serialized, 'cmd_at_shell_startup')) return line;
       delete serialized.cmd_at_shell_startup;
-    } else if (isBareCodexCommand(command)) {
-      command.push('resume');
-      const threadId = savedCodexThreadId(words);
-      if (threadId !== null) command.push(threadId);
     } else {
-      return line;
+      const resumed = resumeCodexCommand(command, savedCodexThreadId(words));
+      if (resumed === command) return line;
+      serialized.cmd_at_shell_startup = resumed;
     }
     words[serializedIndex] = `${SERIALIZED_LAUNCH_PREFIX}${JSON.stringify(serialized)}`;
     return `${match[1]} ${words.map(quoteShellWord).join(' ')}`;

@@ -6,7 +6,7 @@ import { hasConfiguredCodexHooks } from '../../src/lib/codexHooks.js';
 import { CODEX_THREAD_VARIABLE } from '../../src/lib/codexSession.js';
 import { KittyClient } from '../../src/lib/kittyClient.js';
 import { SessionController } from '../../src/lib/sessionController.js';
-import { resumeCodexThreads } from '../../src/lib/sessionFile.js';
+import { prepareSavedSession } from '../../src/lib/sessionFile.js';
 import { SnapshotStore } from '../../src/lib/snapshotStore.js';
 import { WorkspaceRestorer } from '../../src/lib/workspaceRestorer.js';
 import { runPerformanceTests } from './performance.js';
@@ -64,7 +64,7 @@ destination=""
 for argument in "$@"; do destination="$argument"; done
 case "$*" in
   *--use-foreground-process*)
-    printf '%s\\n' "launch 'kitty-unserialize-data={\\"id\\":4,\\"cmd_at_shell_startup\\":[\\"/usr/bin/codex\\"]}' --var=${CODEX_THREAD_VARIABLE}=${threadId}" > "$destination"
+    printf '%s\\n' "launch 'kitty-unserialize-data={\\"id\\":4,\\"cmd_at_shell_startup\\":[\\"/usr/bin/codex\\",\\"--profile\\",\\"work\\",\\"resume\\",\\"--last\\",\\"deploy again\\"]}' --var=${CODEX_THREAD_VARIABLE}=${threadId}" > "$destination"
     ;;
   *)
     printf 'new_tab saved\\nlayout tall\\nlaunch\\n' > "$destination"
@@ -136,6 +136,7 @@ try {
     JSON.stringify({
       hook_event_name: 'SessionStart',
       session_id: threadId,
+      source: 'fork',
     }),
     null,
   );
@@ -186,7 +187,7 @@ try {
       { pid: 11, workspaces: [0, 1] },
       { pid: 22, workspaces: [2] },
     ],
-    processSession: resumeCodexThreads,
+    processSession: (contents) => prepareSavedSession(contents, ['codex']),
     reason: 'integration-test',
   });
 
@@ -197,7 +198,11 @@ try {
     'Expected workspace assignments in the manifest.',
   );
   assert(
-    first.sessionPaths.every((path) => readText(path).includes(`"resume","${threadId}"`)),
+    first.sessionPaths.every((path) =>
+      readText(path).includes(
+        `"cmd_at_shell_startup":["/usr/bin/codex","resume","${threadId}","--profile","work"]`,
+      ),
+    ),
     'Foreground Codex sessions were not linked to the exact saved thread.',
   );
 

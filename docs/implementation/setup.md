@@ -79,16 +79,24 @@ preferences window.
 `src/lib/sessionFile.js` parses Kitty's shell-quoted serialized launch payloads
 without executing them. A command is retained only when its executable basename
 or exact path matches the allowlist; otherwise the serialized startup command
-is removed so Kitty opens its configured shell. For an allowed bare `codex`
-command, a valid `kitty_session_restorer_codex_thread_id` produces `codex resume
-<thread-id>`. Otherwise it becomes `codex resume`, which opens the picker and
-avoids attaching multiple same-directory tabs to one thread. Snapshot
-processing happens before the inactive slot is published, so a file error
-cannot replace the last complete snapshot.
+is removed so Kitty opens its configured shell. For allowed interactive Codex
+commands, a valid `kitty_session_restorer_codex_thread_id` produces `codex resume
+<thread-id>`, including launches with options, resume commands, and forks.
+`src/lib/codexCommand.js` separates option values from positional arguments,
+preserves supported configuration options, and removes the original prompt,
+attachments, `--worktree`, and session selection flags. The saved window UUID
+overrides any old resume ID or `--last`. Unknown options and non-interactive
+subcommands are left unchanged. Without a valid UUID, new-session commands open
+the picker and explicit resume/fork commands keep their captured selection.
+Snapshot processing happens before the inactive slot is published, so a file
+error cannot replace the last complete snapshot.
 
 ## Exact Codex thread integration
 
 Codex `SessionStart` and `SessionEnd` hooks receive the current `session_id`.
+The start hook has no matcher, so it also tracks fork and compact events. See
+the official [hook event documentation](https://learn.chatgpt.com/docs/hooks#sessionstart)
+and [resume reference](https://developers.openai.com/codex/cli/reference#codex-resume).
 Processes inside a Kitty window inherit `KITTY_WINDOW_ID`. The packaged
 `lib/codexSessionHook.js` combines those identifiers. On start it invokes:
 
@@ -109,10 +117,11 @@ copies of this extension's two hook commands, appends the current definitions,
 and atomically writes a private file. Unrelated properties, events, groups, and
 commands are preserved. Invalid JSON is reported without changing the file.
 
-After installation, Codex must be restarted and the user must review and trust
-the hook through `/hooks`. Existing Codex processes must be restarted or
-resumed once after setup. `examples/codex-hooks.json` remains the manual setup
-reference.
+After upgrading from hooks with a `startup|resume|clear` matcher, use **Update
+Hooks** to capture forks as well. After installation, Codex must be restarted
+and the user must review and trust the hook through `/hooks`. Existing Codex
+processes must be restarted or resumed once after setup.
+`examples/codex-hooks.json` remains the manual setup reference.
 
 The hook finds `kitten` on Codex's `PATH`. For a custom executable, prefix the
 example command with:

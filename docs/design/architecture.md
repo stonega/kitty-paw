@@ -42,20 +42,28 @@ shell in that window instead of the captured program. Allowlist entries without
 a slash match an executable basename at any path; entries containing a slash
 match the exact path.
 
-For an allowed bare `codex` command, the same transform emits `codex resume
-<thread-id>` when exact thread metadata is available. Explicit Codex commands
-are left as Kitty serialized them.
+For allowed interactive Codex commands, the same transform emits `codex resume
+<thread-id>` when exact thread metadata is available. This covers new sessions
+with options or a prompt, resume pickers, `resume --last`, explicit resume IDs,
+and forks. The window's current UUID takes precedence over the original command
+because the user may have switched or forked threads since launch. A pure
+argument parser preserves supported options while discarding the original
+prompt, image attachments, worktree creation, and old session selectors.
+Non-interactive subcommands and commands with unknown options are retained as
+captured rather than rewritten using guessed option semantics.
 
 Exact Codex matching uses user-configured Codex `SessionStart` and `SessionEnd`
 hooks packaged with the extension. Codex supplies the current session UUID to
 the hooks, and Kitty supplies `KITTY_WINDOW_ID`. The start hook writes the UUID
-to that window as a namespaced Kitty user variable, while the end hook clears
-it only if the window still holds the ending thread's UUID. Kitty's session
+to that window as a namespaced Kitty user variable for every start source,
+including fork and compaction. The end hook clears it only if the window still
+holds the ending thread's UUID. Kitty's session
 serializer preserves the variable on the matching `launch` entry, allowing the
 pure transform to bind each window to its own thread even when several tabs
 share a working directory. The hooks never read the transcript. When metadata
-is absent or malformed, the transform emits `codex resume` so Codex shows its
-picker instead of guessing with `--last`.
+is absent or malformed, new-session commands become `codex resume` with their
+supported options so Codex shows its picker. Explicit resume and fork commands
+keep their captured selection when metadata is unavailable.
 
 ## Atomic snapshot state
 

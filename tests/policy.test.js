@@ -201,6 +201,29 @@ describe('saved foreground commands', () => {
     expect(resumeCodexThreads(explicitCodex)).toBe(explicitCodex);
   });
 
+  test('pins configured and resumed commands to each window UUID before publishing', () => {
+    const session = [
+      `launch 'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/codex","--profile","work","build it"]}' --var=${CODEX_THREAD_VARIABLE}=${firstThreadId}`,
+      `launch 'kitty-unserialize-data={"id":5,"cmd_at_shell_startup":["codex","resume","--last"]}' --var=${CODEX_THREAD_VARIABLE}=${secondThreadId}`,
+    ].join('\n');
+    const prepared = prepareSavedSession(session, ['codex']);
+    expect(prepared).toContain(
+      `"cmd_at_shell_startup":["/usr/bin/codex","resume","${firstThreadId}","--profile","work"]`,
+    );
+    expect(prepared).toContain(`"cmd_at_shell_startup":["codex","resume","${secondThreadId}"]`);
+    expect(prepared).not.toContain('build it');
+    expect(prepared).not.toContain('--last');
+    expect(prepareSavedSession(prepared, ['codex'])).toBe(prepared);
+    expect(prepareSavedSession(session, [])).not.toContain('cmd_at_shell_startup');
+  });
+
+  test('does not use malformed window metadata as a resume argument', () => {
+    const session = `launch 'kitty-unserialize-data={"cmd_at_shell_startup":["codex","--model=my-model"]}' --var=${CODEX_THREAD_VARIABLE}=--last`;
+    expect(prepareSavedSession(session, ['codex'])).toContain(
+      '"cmd_at_shell_startup":["codex","resume","--model=my-model"]',
+    );
+  });
+
   test('keeps only foreground commands in the auto-run allowlist', () => {
     const session = [
       'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/nvim","notes.md"]}\'',
@@ -300,6 +323,19 @@ describe('Codex hooks configuration', () => {
         (hook) => hook.command === CODEX_HOOK_COMMAND,
       ),
     ).toHaveLength(1);
+  });
+
+  test('upgrades start hooks to track every source, including fork and compact', () => {
+    const previous = mergeCodexHooksConfig({});
+    previous.hooks.SessionStart[0].matcher = 'startup|resume|clear';
+    const updated = mergeCodexHooksConfig(previous);
+    expect(updated.hooks.SessionStart).toHaveLength(1);
+    expect(updated.hooks.SessionStart[0].matcher).toBeUndefined();
+  });
+
+  test('keeps the manual hook example in sync with the installer', async () => {
+    const example = await Bun.file(new URL('../examples/codex-hooks.json', import.meta.url)).json();
+    expect(example).toEqual(mergeCodexHooksConfig({}));
   });
 
   test('rejects malformed hooks collections', () => {

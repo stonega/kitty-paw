@@ -8,9 +8,10 @@ open.
 The extension preserves Kitty OS windows, their GNOME workspace placement,
 tabs, splits, layouts, shell working directories, and explicit window launch
 commands. An opt-in preference can also restart foreground programs such as
-Neovim. With the supplied Codex hook configured, each bare `codex` command is
-restored as `codex resume <thread-id>`, so multiple tabs in the same project
-continue their own chats.
+Neovim. With the supplied Codex hooks configured, interactive Codex commands
+restore as `codex resume <thread-id>`, including commands with common options,
+resumed chats, and forks. Multiple tabs in the same project continue their own
+chats without replaying their original prompts.
 
 ## Requirements
 
@@ -70,8 +71,8 @@ normal shell, even though Kitty captured their command lines.
 ## Exact Codex thread restore
 
 1. Open the extension preferences and find **Codex CLI integration**.
-2. Click **Install Hooks**. This safely merges the extension's `SessionStart`
-   and `SessionEnd` hooks into `~/.codex/hooks.json`.
+2. Click **Install Hooks** (or **Update Hooks** after upgrading). This merges
+   the extension's `SessionStart` and `SessionEnd` hooks into `~/.codex/hooks.json`.
 3. Restart Codex, run `/hooks`, review the command, and trust it.
 4. Restart or resume Codex threads that were already open before setup.
 5. Keep `codex` in the auto-run allowlist and enable foreground restoration.
@@ -80,9 +81,11 @@ For manual setup, merge the entries from
 [examples/codex-hooks.json](examples/codex-hooks.json) into
 `~/.codex/hooks.json`; do not replace unrelated hooks.
 
-The hook stores only the Codex thread UUID as private Kitty window metadata. If
-the metadata is unavailable, restore opens the Codex resume picker rather than
-guessing with `--last`.
+The hook stores only the Codex thread UUID as private Kitty window metadata,
+and each snapshot saves it with that window's recovery command. Model, profile,
+and other supported options are retained. Without a valid UUID, new-session
+commands open the resume picker; explicit `resume` and `fork` commands retain
+their captured selection. See the [user guide](docs/user/guide.md) for details.
 
 ## Development
 

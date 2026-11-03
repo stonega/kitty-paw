@@ -12,11 +12,18 @@ retained for relaunch; other windows reopen with a normal shell. This requires
 Kitty shell integration.
 
 With that option enabled, a command such as `nvim file.txt` is launched again
-in the saved working directory. With the Codex hook configured, a bare `codex`
-command becomes `codex resume <thread-id>`. Each Kitty window records its own
-thread, so several Codex tabs in the same project restore independently. If
-exact metadata is unavailable, the tab opens `codex resume` and shows the
-picker instead of guessing with `--last`.
+in the saved working directory. With the Codex hooks configured, interactive
+commands such as `codex`, `codex --profile work`, and `codex resume --last` become
+`codex resume <thread-id>` with supported options retained. Each Kitty window
+records its current thread, including forks and threads switched through the
+Codex UI, so several tabs in the same project restore independently. Original
+prompts and images are not sent again, and `--worktree` does not create another
+worktree during recovery.
+
+Without a valid saved UUID, new-session commands open the Codex resume picker;
+explicit resume and fork commands keep their captured selection. Non-interactive
+Codex subcommands and commands with unrecognized options are relaunched as
+captured under the foreground allowlist policy.
 
 This restores commands, not in-memory application state. Unsaved editor
 buffers, scrollback, shell variables, and command history that has not been
@@ -59,8 +66,8 @@ nonstandard installations.
 ## Enable exact Codex thread restore
 
 1. Open the extension preferences and find **Codex CLI integration**.
-2. Click **Install Hooks**. Existing hooks and other configuration are
-   preserved.
+2. Click **Install Hooks**, or **Update Hooks** after upgrading. Existing hooks
+   and other configuration are preserved.
 3. Restart Codex, run `/hooks`, review the command, and trust it.
 4. Restart or resume each Codex thread that was already open before setup.
 5. Keep `codex` in **Auto-run command allowlist** and enable
@@ -68,7 +75,8 @@ nonstandard installations.
 
 The hook records only the current Codex thread UUID as Kitty window metadata.
 It does not read or copy the conversation transcript. New snapshots then bind
-each Kitty window to its exact thread.
+each Kitty window to its exact thread and save `codex resume <thread-id>` in the
+snapshot, so restoration resumes that thread automatically.
 
 If the preferences installer reports invalid JSON, repair
 `~/.codex/hooks.json` and try again. For manual setup, merge the event entries
