@@ -33,6 +33,7 @@ export class SessionController {
     this._debounceId = 0;
     this._intervalId = 0;
     this._settingsSignals = [];
+    this._cancellable = null;
     this._saving = false;
     this._restoring = false;
     this._pendingSave = false;
@@ -44,6 +45,7 @@ export class SessionController {
 
   start() {
     if (!this._stopped) return;
+    this._cancellable = new Gio.Cancellable();
     this._stopped = false;
     this._tracker.start((reason) => this.requestSave(reason));
 
@@ -78,19 +80,23 @@ export class SessionController {
     for (const signalId of this._settingsSignals) this._settings.disconnect(signalId);
     this._settingsSignals = [];
     this._tracker.stop();
+    this._cancellable.cancel();
     this._client.stop();
     this._pendingSave = false;
   }
 
   requestSave(reason, delaySeconds = EVENT_DEBOUNCE_SECONDS) {
     if (this._stopped) return;
+    // An in-flight capture already services periodic ticks; only events need a retry.
+    if (this._saving && reason === 'periodic') return;
     this._pendingReason = reason;
     if (this._saving) {
       this._pendingSave = true;
       return;
     }
 
-    this._removeSource('_debounceId');
+    // Coalesce bursts without letting focus changes postpone a save indefinitely.
+    if (this._debounceId) return;
     this._debounceId = GLib.timeout_add_seconds(
       GLib.PRIORITY_DEFAULT,
       Math.max(1, delaySeconds),
@@ -105,10 +111,9 @@ export class SessionController {
   async restore() {
     if (this._stopped) return;
 
-    const snapshot = this._store.loadCurrent();
     const decision = restoreDecision({
       hasKittyWindows: this._tracker.hasKittyWindows(),
-      hasSnapshot: snapshot !== null,
+      hasSnapshot: true,
       isRestoring: this._restoring,
     });
 
@@ -123,14 +128,25 @@ export class SessionController {
       );
       return;
     }
-    if (decision === 'no-snapshot') {
-      this._notify(EXTENSION_NAME, 'No saved Kitty session is available yet.');
-      return;
-    }
-
     this._restoring = true;
     this._setStatus('restoring');
     try {
+      const snapshot = await this._store.loadCurrent({ cancellable: this._cancellable });
+      if (this._stopped) return;
+      // Windows can appear while the snapshot is being read asynchronously.
+      if (this._tracker.hasKittyWindows()) {
+        this._notify(
+          EXTENSION_NAME,
+          'Kitty is already open. Close every Kitty window before restoring.',
+        );
+        this._setStatus('idle');
+        return;
+      }
+      if (snapshot === null) {
+        this._notify(EXTENSION_NAME, 'No saved Kitty session is available yet.');
+        this._setStatus('idle');
+        return;
+      }
       const kittyCommand = this._settings.get_string(SETTINGS_KEYS.kittyCommand);
       for (const [index, sessionPath] of snapshot.sessionPaths.entries()) {
         if (this._stopped) return;
@@ -178,6 +194,7 @@ export class SessionController {
       };
 
       await this._store.capture({
+        cancellable: this._cancellable,
         captureInstance: async (pid, destination) => {
           const socketAddress = expandSocketTemplate(socketTemplate, pid, environment);
           await this._client.saveSession({

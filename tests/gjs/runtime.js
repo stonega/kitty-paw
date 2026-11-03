@@ -9,6 +9,7 @@ import { SessionController } from '../../src/lib/sessionController.js';
 import { resumeCodexThreads } from '../../src/lib/sessionFile.js';
 import { SnapshotStore } from '../../src/lib/snapshotStore.js';
 import { WorkspaceRestorer } from '../../src/lib/workspaceRestorer.js';
+import { runPerformanceTests } from './performance.js';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -217,7 +218,7 @@ try {
   }
   assert(failed, 'Expected the fake capture to fail.');
 
-  const retained = store.loadCurrent();
+  const retained = await store.loadCurrent();
   assert(retained !== null, 'The last good snapshot was not retained.');
   assert(
     retained.manifest.savedAt === first.manifest.savedAt,
@@ -348,6 +349,7 @@ try {
     restoredWorkspaces.map((assignments) => assignments.join(',')).join('|') === '0,1|2',
     'Controller did not apply each saved instance workspace list.',
   );
+  await runPerformanceTests(temporaryDirectory);
 } finally {
   client.stop();
   GLib.unsetenv('KITTY_TEST_LAUNCH_LOG');

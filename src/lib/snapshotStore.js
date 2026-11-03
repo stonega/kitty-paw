@@ -4,73 +4,115 @@ import GLib from 'gi://GLib';
 import { MANIFEST_VERSION, SNAPSHOT_SLOTS, STATE_DIRECTORY_NAME } from './constants.js';
 import { chooseInactiveSlot, validateManifest, validateWorkspaceAssignments } from './policy.js';
 
+for (const method of [
+  'delete_async',
+  'enumerate_children_async',
+  'load_contents_async',
+  'make_directory_async',
+  'query_info_async',
+  'set_attributes_async',
+])
+  Gio._promisify(Gio.File.prototype, method);
+Gio._promisify(Gio.File.prototype, 'replace_contents_bytes_async', 'replace_contents_finish');
+Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
+Gio._promisify(Gio.FileEnumerator.prototype, 'close_async');
+
 const CURRENT_POINTER = 'current';
 const MANIFEST_FILE = 'manifest.json';
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
+const IO_PRIORITY = GLib.PRIORITY_DEFAULT;
+const NOFOLLOW = Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS;
 
-function ensureDirectory(path) {
-  if (GLib.mkdir_with_parents(path, PRIVATE_DIRECTORY_MODE) !== 0)
-    throw new Error(`Could not create state directory: ${path}`);
-  GLib.chmod(path, PRIVATE_DIRECTORY_MODE);
+async function setMode(file, mode, cancellable) {
+  const attributes = new Gio.FileInfo();
+  attributes.set_attribute_uint32('unix::mode', mode);
+  await file.set_attributes_async(attributes, NOFOLLOW, IO_PRIORITY, cancellable);
 }
 
-function readText(path) {
+async function makeDirectory(file, cancellable) {
   try {
-    const [ok, contents] = GLib.file_get_contents(path);
-    return ok ? new TextDecoder().decode(contents) : null;
-  } catch {
+    await file.make_directory_async(IO_PRIORITY, cancellable);
+  } catch (error) {
+    if (error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS)) return;
+    const parent = file.get_parent();
+    if (!parent || !error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND)) throw error;
+    await makeDirectory(parent, cancellable);
+    await file.make_directory_async(IO_PRIORITY, cancellable);
+  }
+}
+
+async function ensureDirectory(path, cancellable) {
+  const file = Gio.File.new_for_path(path);
+  await makeDirectory(file, cancellable);
+  await setMode(file, PRIVATE_DIRECTORY_MODE, cancellable);
+}
+
+async function readText(path, cancellable) {
+  try {
+    const [contents] = await Gio.File.new_for_path(path).load_contents_async(cancellable);
+    return new TextDecoder().decode(contents);
+  } catch (error) {
+    if (error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) throw error;
     return null;
   }
 }
 
-function writeText(path, contents) {
-  if (!GLib.file_set_contents(path, contents))
-    throw new Error(`Could not write state file: ${path}`);
-  GLib.chmod(path, PRIVATE_FILE_MODE);
+async function writeText(path, contents, cancellable) {
+  // GBytes owns the buffer until Gio finishes the asynchronous, atomic replacement.
+  await Gio.File.new_for_path(path).replace_contents_bytes_async(
+    new GLib.Bytes(new TextEncoder().encode(contents)),
+    null,
+    false,
+    Gio.FileCreateFlags.PRIVATE | Gio.FileCreateFlags.REPLACE_DESTINATION,
+    cancellable,
+  );
 }
 
-function writeTextAtomically(path, contents) {
-  const temporaryPath = `${path}.tmp`;
-  writeText(temporaryPath, contents);
-  if (GLib.rename(temporaryPath, path) !== 0)
-    throw new Error(`Could not publish state file: ${path}`);
-  GLib.chmod(path, PRIVATE_FILE_MODE);
-}
-
-function removeTree(path) {
+async function removeTree(path, cancellable) {
   const file = Gio.File.new_for_path(path);
-  if (!file.query_exists(null)) return;
-
-  const info = file.query_info('standard::type', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+  let info;
+  try {
+    info = await file.query_info_async('standard::type', NOFOLLOW, IO_PRIORITY, cancellable);
+  } catch (error) {
+    if (error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND)) return;
+    throw error;
+  }
 
   if (info.get_file_type() === Gio.FileType.DIRECTORY) {
-    const enumerator = file.enumerate_children(
+    const enumerator = await file.enumerate_children_async(
       'standard::name',
-      Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
-      null,
+      NOFOLLOW,
+      IO_PRIORITY,
+      cancellable,
     );
     try {
-      for (let child = enumerator.next_file(null); child; child = enumerator.next_file(null))
-        removeTree(file.get_child(child.get_name()).get_path());
+      let children;
+      do {
+        children = await enumerator.next_files_async(32, IO_PRIORITY, cancellable);
+        for (const child of children)
+          await removeTree(file.get_child(child.get_name()).get_path(), cancellable);
+      } while (children.length > 0);
     } finally {
-      enumerator.close(null);
+      // Even a cancelled traversal must close its enumerator.
+      await enumerator.close_async(IO_PRIORITY, null);
     }
   }
 
-  file.delete(null);
+  await file.delete_async(IO_PRIORITY, cancellable);
 }
 
-function assertSessionFile(path) {
+async function assertSessionFile(path, cancellable, secure = false) {
   const file = Gio.File.new_for_path(path);
-  const info = file.query_info(
+  const info = await file.query_info_async(
     'standard::size,standard::type',
-    Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
-    null,
+    NOFOLLOW,
+    IO_PRIORITY,
+    cancellable,
   );
   if (info.get_file_type() !== Gio.FileType.REGULAR || info.get_size() <= 0)
     throw new Error('Kitty produced an empty or invalid session file.');
-  GLib.chmod(path, PRIVATE_FILE_MODE);
+  if (secure) await setMode(file, PRIVATE_FILE_MODE, cancellable);
 }
 
 function sessionFilename(index) {
@@ -104,17 +146,23 @@ export class SnapshotStore {
       baseDirectory ?? GLib.build_filenamev([GLib.get_user_state_dir(), STATE_DIRECTORY_NAME]);
   }
 
-  async capture({ instances: captureInstances, reason, captureInstance, processSession = null }) {
+  async capture({
+    instances: captureInstances,
+    reason,
+    captureInstance,
+    processSession = null,
+    cancellable = null,
+  }) {
     const orderedInstances = normalizeInstances(captureInstances);
     if (orderedInstances.length === 0) throw new Error('No Kitty instances are available to save.');
 
-    ensureDirectory(this.baseDirectory);
-    const activeSlot = this._readCurrentSlot();
+    await ensureDirectory(this.baseDirectory, cancellable);
+    const activeSlot = await this._readCurrentSlot(cancellable);
     const targetSlot = chooseInactiveSlot(activeSlot);
     const targetDirectory = this._slotPath(targetSlot);
 
-    removeTree(targetDirectory);
-    ensureDirectory(targetDirectory);
+    await removeTree(targetDirectory, cancellable);
+    await ensureDirectory(targetDirectory, cancellable);
 
     try {
       const instances = [];
@@ -122,15 +170,18 @@ export class SnapshotStore {
         const file = sessionFilename(index);
         const destination = GLib.build_filenamev([targetDirectory, file]);
         await captureInstance(instance.pid, destination);
+        await assertSessionFile(destination, cancellable, true);
         if (processSession) {
-          const sessionContents = readText(destination);
+          const sessionContents = await readText(destination, cancellable);
           if (sessionContents === null) throw new Error('Could not read saved Kitty session.');
           const processedContents = processSession(sessionContents);
           if (typeof processedContents !== 'string')
             throw new Error('Kitty session processing produced invalid output.');
-          if (processedContents !== sessionContents) writeText(destination, processedContents);
+          if (processedContents.length === 0)
+            throw new Error('Kitty produced an empty or invalid session file.');
+          if (processedContents !== sessionContents)
+            await writeText(destination, processedContents, cancellable);
         }
-        assertSessionFile(destination);
         instances.push({ file, ...instance });
       }
 
@@ -142,46 +193,56 @@ export class SnapshotStore {
       };
       if (!validateManifest(manifest)) throw new Error('Generated snapshot manifest is invalid.');
 
-      writeText(
+      await writeText(
         GLib.build_filenamev([targetDirectory, MANIFEST_FILE]),
         `${JSON.stringify(manifest, null, 2)}\n`,
+        cancellable,
       );
-      writeTextAtomically(
+      await writeText(
         GLib.build_filenamev([this.baseDirectory, CURRENT_POINTER]),
         `${targetSlot}\n`,
+        cancellable,
       );
       return { manifest, sessionPaths: this._sessionPaths(targetDirectory, manifest) };
     } catch (error) {
-      removeTree(targetDirectory);
+      // Leave cancelled work in the inactive slot for the next capture to clean up.
+      if (!cancellable?.is_cancelled()) {
+        try {
+          await removeTree(targetDirectory, cancellable);
+        } catch {
+          // Preserve the capture error if cleanup also fails.
+        }
+      }
       throw error;
     }
   }
 
-  loadCurrent() {
-    const preferredSlot = this._readCurrentSlot();
+  async loadCurrent({ cancellable = null } = {}) {
+    const preferredSlot = await this._readCurrentSlot(cancellable);
     const candidates = preferredSlot
       ? [preferredSlot, ...SNAPSHOT_SLOTS.filter((slot) => slot !== preferredSlot)]
       : [...SNAPSHOT_SLOTS];
 
     for (const slot of candidates) {
-      const snapshot = this._loadSlot(slot);
+      const snapshot = await this._loadSlot(slot, cancellable);
       if (snapshot) return snapshot;
     }
     return null;
   }
 
-  _loadSlot(slot) {
+  async _loadSlot(slot, cancellable) {
     const directory = this._slotPath(slot);
-    const text = readText(GLib.build_filenamev([directory, MANIFEST_FILE]));
+    const text = await readText(GLib.build_filenamev([directory, MANIFEST_FILE]), cancellable);
     if (!text) return null;
 
     try {
       const manifest = JSON.parse(text);
       if (!validateManifest(manifest)) return null;
       const sessionPaths = this._sessionPaths(directory, manifest);
-      for (const path of sessionPaths) assertSessionFile(path);
+      for (const path of sessionPaths) await assertSessionFile(path, cancellable);
       return { manifest, sessionPaths };
-    } catch {
+    } catch (error) {
+      if (error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) throw error;
       return null;
     }
   }
@@ -190,8 +251,10 @@ export class SnapshotStore {
     return manifest.instances.map(({ file }) => GLib.build_filenamev([directory, file]));
   }
 
-  _readCurrentSlot() {
-    const current = readText(GLib.build_filenamev([this.baseDirectory, CURRENT_POINTER]))?.trim();
+  async _readCurrentSlot(cancellable) {
+    const current = (
+      await readText(GLib.build_filenamev([this.baseDirectory, CURRENT_POINTER]), cancellable)
+    )?.trim();
     return SNAPSHOT_SLOTS.includes(current) ? current : null;
   }
 

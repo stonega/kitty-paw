@@ -76,6 +76,15 @@ from `examples/codex-hooks.json` without replacing unrelated hooks.
 
 ## Troubleshooting
 
+### Autosave appears to stall the desktop
+
+Snapshot disk operations run asynchronously so slow storage does not block
+GNOME Shell. Only one capture runs at a time, and timer ticks during a running
+capture do not queue another save. Each Kitty command has a 10-second timeout;
+multiple Kitty processes are saved in sequence. If saving fails, the previous
+complete snapshot remains available. Follow the Shell logs described in the
+developer setup document to identify timeouts or remote-control errors.
+
 ### The paw turns red
 
 A save or restore command failed. Confirm that `kitty` and `kitten` are visible

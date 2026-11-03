@@ -48,8 +48,16 @@ installing a new extension version when GNOME does not pick it up dynamically.
 - Do not import Gtk or Adw from `extension.js`; they belong only in `prefs.js`.
 - Keep subprocess calls asynchronous and pass explicit argument arrays.
 - Never overwrite the active snapshot until every Kitty instance saves.
+- Use asynchronous Gio filesystem operations for snapshot state, including
+  metadata checks and cleanup. `SnapshotStore.capture()` and `loadCurrent()`
+  both return promises and accept a `cancellable` option owned by the controller.
 - Keep the manifest backward compatible or introduce a versioned migration.
 - Never change the user's Kitty configuration from extension code.
+
+The GJS performance regression tests reject synchronous filesystem calls during
+snapshot workflows, verify private permissions and recovery after cancellation,
+and check save coalescing and restore guards while IO is pending. All fixtures
+use temporary directories; they do not access live Kitty sessions.
 
 ## Workspace restoration
 

@@ -20,7 +20,10 @@ Pure matching, manifest, socket-template, and restore policy lives in
 
 GNOME window creation, Kitty window destruction, focus changes, extension
 startup, and a periodic timer request saves. Requests are debounced and only
-one save may execute at a time. Internal Kitty changes such as a new tab or
+one save may execute at a time. The first request sets a fixed debounce deadline;
+later focus events do not postpone it. Periodic ticks during a running save are
+absorbed by that save, while window and settings events request one follow-up.
+Internal Kitty changes such as a new tab or
 working-directory change are caught by the periodic timer because GNOME does
 not receive those events.
 
@@ -61,6 +64,14 @@ inactive slot, validates every non-empty session file, and writes a versioned
 manifest before atomically replacing the small `current` pointer file. If any
 process exits, times out, or writes invalid output, the incomplete slot is
 removed and the pointer continues to reference the last complete snapshot.
+
+Snapshot directory creation, cleanup, reads, validation, permission changes, and
+atomic writes use asynchronous Gio operations so filesystem latency does not
+block GNOME Shell. The controller shares a cancellable across snapshot reads
+and writes and cancels it on disable. Cancelled captures leave incomplete files
+in the inactive slot for the next capture to clean up, without publishing them.
+Restore reserves its busy state before reading and rechecks for open Kitty
+windows after the read completes.
 
 The manifest format is:
 
