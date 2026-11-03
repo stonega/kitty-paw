@@ -119,8 +119,15 @@ a usable workspace for that window when the snapshot was taken.
 
 ## Restore flow
 
-A click checks current GNOME windows and blocks restore if Kitty is already
-open. With a valid snapshot, the controller launches one detached Kitty process
+Clicking the panel button opens a popup rebuilt from the tracker's current Kitty
+OS windows, ordered by stable window-creation sequence. Each entry shows its
+window title (or a numbered fallback) and uses GNOME Shell's window activation
+helper to focus it and switch workspaces when necessary. Activation rechecks
+that the selected window is still open. With no Kitty windows, the popup offers
+**Restore**, which calls the controller's existing guarded restore flow.
+
+The controller checks current GNOME windows and blocks restore if Kitty is
+already open. With a valid snapshot, it launches one detached Kitty process
 per saved instance using `kitty --detach --session <file>`. The tracker waits a
 bounded amount of time for that instance's OS windows, matches them in stable
 creation order, creates missing GNOME workspaces when necessary, and moves each

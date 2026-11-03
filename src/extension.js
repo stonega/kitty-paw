@@ -1,5 +1,3 @@
-import Atk from 'gi://Atk';
-import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
@@ -7,6 +5,7 @@ import St from 'gi://St';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import { EXTENSION_NAME } from './lib/constants.js';
 import { KittyClient } from './lib/kittyClient.js';
@@ -19,9 +18,11 @@ class RestoreIndicator extends PanelMenu.Button {
     GObject.registerClass(RestoreIndicator);
   }
 
-  constructor(iconPath, onActivate) {
-    super(0, EXTENSION_NAME, true);
-    this.accessible_role = Atk.Role.PUSH_BUTTON;
+  constructor(iconPath, { listWindows, activateWindow, restore }) {
+    super(0, EXTENSION_NAME);
+    this._listWindows = listWindows;
+    this._activateWindow = activateWindow;
+    this._restore = restore;
 
     const iconFile = Gio.File.new_for_path(iconPath);
     this._icon = new St.Icon({
@@ -30,22 +31,34 @@ class RestoreIndicator extends PanelMenu.Button {
     });
     this.add_child(this._icon);
 
-    this.connect('button-release-event', (_actor, event) => {
-      if (event.get_button() !== Clutter.BUTTON_PRIMARY) return Clutter.EVENT_PROPAGATE;
-      onActivate();
-      return Clutter.EVENT_STOP;
+    this.menu.connect('open-state-changed', (_menu, isOpen) => {
+      if (isOpen) this._refreshMenu();
     });
-    this.connect('key-press-event', (_actor, event) => {
-      const symbol = event.get_key_symbol();
-      if (
-        symbol !== Clutter.KEY_Return &&
-        symbol !== Clutter.KEY_KP_Enter &&
-        symbol !== Clutter.KEY_space
-      )
-        return Clutter.EVENT_PROPAGATE;
-      onActivate();
-      return Clutter.EVENT_STOP;
-    });
+    this._refreshMenu();
+  }
+
+  _refreshMenu() {
+    this.menu.removeAll();
+    const windows = this._listWindows().sort(
+      (left, right) => (left.stableSequence ?? 0) - (right.stableSequence ?? 0),
+    );
+    if (windows.length === 0) {
+      const item = new PopupMenu.PopupMenuItem('Restore');
+      item.connect('activate', () => this._restore());
+      this.menu.addMenuItem(item);
+      return;
+    }
+
+    for (const [index, window] of windows.entries()) {
+      const item = new PopupMenu.PopupMenuItem(window.title?.trim() || `Kitty window ${index + 1}`);
+      item.label.add_style_class_name('kitty-session-restorer-window-title');
+      item.connect('activate', (_item, event) => {
+        // A window may close while the popup is open.
+        if (this._listWindows().some(({ metaWindow }) => metaWindow === window.metaWindow))
+          this._activateWindow(window.metaWindow, event?.get_time());
+      });
+      this.menu.addMenuItem(item);
+    }
   }
 
   setStatus(status) {
@@ -71,10 +84,11 @@ export default class KittySessionRestorerExtension extends Extension {
     const store = new SnapshotStore();
     const client = new KittyClient();
 
-    this._indicator = new RestoreIndicator(
-      `${this.path}/icons/kitty-paw-symbolic.svg`,
-      () => void this._controller?.restore(),
-    );
+    this._indicator = new RestoreIndicator(`${this.path}/icons/kitty-paw-symbolic.svg`, {
+      activateWindow: (window, timestamp) => Main.activateWindow(window, timestamp),
+      listWindows: () => tracker.listKittyWindows(),
+      restore: () => void this._controller?.restore(),
+    });
     Main.panel.addToStatusArea(this.uuid, this._indicator, 0, 'right');
 
     this._controller = new SessionController({

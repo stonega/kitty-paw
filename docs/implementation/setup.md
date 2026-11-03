@@ -54,10 +54,23 @@ installing a new extension version when GNOME does not pick it up dynamically.
 - Keep the manifest backward compatible or introduce a versioned migration.
 - Never change the user's Kitty configuration from extension code.
 
+The panel indicator uses the standard `PanelMenu.Button` popup and keyboard
+handling. Its window entries are rebuilt on each popup opening from
+`KittyWindowTracker.listKittyWindows()`, including safely read window titles.
+Entries call `Main.activateWindow()` to bring the selected window forward and
+switch to its workspace. If no windows exist, **Restore** calls
+`SessionController.restore()`, which retains its repeated-click and window
+race guards. The indicator owns the menu and its signal handlers; destroying
+the indicator during disable destroys them too.
+
 The GJS performance regression tests reject synchronous filesystem calls during
 snapshot workflows, verify private permissions and recovery after cancellation,
 and check save coalescing and restore guards while IO is pending. All fixtures
 use temporary directories; they do not access live Kitty sessions.
+
+The GNOME smoke test exercises the real popup with injected window snapshots
+and action callbacks, checking window selection, fresh titles, stale selections,
+and the empty-window restore action without touching a live Kitty session.
 
 ## Workspace restoration
 

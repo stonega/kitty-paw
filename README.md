@@ -1,9 +1,9 @@
 # Kitty Session Restorer
 
 Kitty Session Restorer is a GNOME Shell 50 extension that continuously saves
-Kitty window layouts and restores the latest complete snapshot from a paw icon
-in the top panel. Restore is intentionally blocked while any Kitty window is
-open.
+Kitty window layouts. Click the paw icon in the top panel to list and switch to
+open Kitty windows, or choose **Restore** when no Kitty windows are open to
+recover the latest complete snapshot.
 
 The extension preserves Kitty OS windows, their GNOME workspace placement,
 tabs, splits, layouts, shell working directories, and explicit window launch
@@ -52,7 +52,7 @@ gnome-extensions enable kitty-session-restorer@stone.dev
 ```
 
 Open Kitty and allow at most 30 seconds for the first periodic snapshot. After
-closing every Kitty window, click the paw in the top panel to restore it.
+closing every Kitty window, click the paw in the top panel and choose **Restore**.
 
 ## Foreground command allowlist
 

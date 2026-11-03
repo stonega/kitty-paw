@@ -96,6 +96,7 @@ export class KittyWindowTracker {
         metaWindow,
         pid: safeCall(() => metaWindow.get_pid(), -1),
         stableSequence: safeCall(() => metaWindow.get_stable_sequence(), null),
+        title: safeCall(() => metaWindow.get_title(), ''),
         workspaceIndex: safeCall(() => metaWindow.get_workspace()?.index(), null),
         wmClass: safeCall(() => metaWindow.get_wm_class(), ''),
         wmClassInstance: safeCall(() => metaWindow.get_wm_class_instance(), ''),

@@ -5,3 +5,7 @@
 .kitty-session-restorer-error {
   color: #ed333b;
 }
+
+.kitty-session-restorer-window-title {
+  max-width: 30em;
+}

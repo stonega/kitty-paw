@@ -34,18 +34,26 @@ This restores commands, not in-memory application state. Unsaved editor
 buffers, scrollback, shell variables, and command history that has not been
 written by the shell are not captured.
 
+## Switch to an open window
+
+Click the paw in the GNOME top panel to see the current Kitty windows by title.
+Click a window to bring it forward, including switching to its workspace or
+showing it if minimized. The list refreshes each time you open the popup.
+
 ## Restore a session
 
 1. Close every Kitty window.
 2. Click the paw in the GNOME top panel.
-3. Wait for the saved Kitty windows to appear.
+3. Click **Restore** in the popup and wait for the saved Kitty windows to appear.
 
 Each window is moved back to its saved GNOME workspace. The extension creates a
 missing workspace when necessary but does not switch away from the workspace
 where you clicked restore. Snapshots made by an older extension version still
 restore, but do not gain workspace placement until Kitty is saved again.
 
-If Kitty is already open, the click is blocked and a notification explains why.
+While Kitty is open, the popup lists its windows instead of offering restore.
+If a Kitty window opens just before a restore starts, restore is blocked and a
+notification explains why.
 If no successful snapshot exists yet, the extension also reports that instead
 of opening an empty terminal.
 
