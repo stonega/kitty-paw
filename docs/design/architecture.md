@@ -120,8 +120,18 @@ a usable workspace for that window when the snapshot was taken.
 ## Restore flow
 
 Clicking the panel button opens a popup rebuilt from the tracker's current Kitty
-OS windows, ordered by stable window-creation sequence. Each entry shows its
-window title (or a numbered fallback) and uses GNOME Shell's window activation
+OS windows, ordered by stable window-creation sequence and centered beneath the
+button when monitor bounds permit. Each entry shows the working directory of
+the active pane in its active tab, with a tab count loaded in the same
+asynchronous query by `WindowTabLoader` through the shared `KittyClient`. Until the directory
+loads or if it is unavailable, the entry uses its window title or a numbered
+fallback. Counts come from each OS window's `tabs` array in Kitty's remote-control
+listing; directory selection uses tab and pane `is_active` flags so unfocused
+OS windows also show their active directory. Complete per-process window sets
+are matched in creation order. Failed queries and changed or incomplete sets
+leave the count unavailable and retain the fallback title. Closing or rebuilding the popup
+invalidates pending label updates, and disable stops detail loading along with
+the client's other subprocesses. Each entry uses GNOME Shell's window activation
 helper to focus it and switch workspaces when necessary. Activation rechecks
 that the selected window is still open. With no Kitty windows, the popup offers
 **Restore**, which calls the controller's existing guarded restore flow.

@@ -9,3 +9,7 @@
 .kitty-session-restorer-window-title {
   max-width: 30em;
 }
+
+.kitty-session-restorer-tab-count {
+  margin: 0 0.5em;
+}

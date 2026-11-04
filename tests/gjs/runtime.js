@@ -72,6 +72,14 @@ writeExecutable(
 case "$*" in
   *unix:fail*) echo "simulated remote-control failure" >&2; exit 9 ;;
 esac
+if [ "$4" = ls ]; then
+  case "$3" in
+    unix:invalid-json) printf 'invalid json' ;;
+    unix:invalid-list) printf '{}' ;;
+    *) printf '[{"id":1,"tabs":[{},{}]}]' ;;
+  esac
+  exit 0
+fi
 destination=""
 for argument in "$@"; do destination="$argument"; done
 case "$*" in
@@ -104,6 +112,21 @@ const store = new SnapshotStore({
 });
 
 try {
+  const listedWindows = await client.listWindows({
+    kittenCommand: fakeKitten,
+    socketAddress: 'unix:window-list',
+  });
+  assert(listedWindows[0].tabs.length === 2, 'Kitty window listing lost its tabs.');
+  for (const socketAddress of ['unix:invalid-json', 'unix:invalid-list', 'unix:fail']) {
+    let rejected = false;
+    try {
+      await client.listWindows({ kittenCommand: fakeKitten, socketAddress });
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `Kitty window listing accepted a failed response: ${socketAddress}`);
+  }
+
   const codexDirectory = GLib.build_filenamev([temporaryDirectory, 'codex-config']);
   GLib.mkdir_with_parents(codexDirectory, 0o700);
   const hooksPath = GLib.build_filenamev([codexDirectory, 'hooks.json']);

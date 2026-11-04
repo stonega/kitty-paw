@@ -36,7 +36,13 @@ written by the shell are not captured.
 
 ## Switch to an open window
 
-Click the paw in the GNOME top panel to see the current Kitty windows by title.
+Click the paw in the GNOME top panel to see the current Kitty windows by directory path.
+The popup is centered beneath the paw when there is room on the monitor.
+Each window shows the working directory of the active pane in its active tab,
+with its tab count beside the path. Both load when the popup opens; the window
+title (or a numbered label) is used while loading or when the directory is
+unavailable. Split panes within a tab are counted as one tab. **Tabs unavailable**
+means Kitty's remote control could not provide a matching count for that window.
 Click a window to bring it forward, including switching to its workspace or
 showing it if minimized. The list refreshes each time you open the popup.
 

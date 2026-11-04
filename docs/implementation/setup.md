@@ -55,13 +55,30 @@ installing a new extension version when GNOME does not pick it up dynamically.
 - Never change the user's Kitty configuration from extension code.
 
 The panel indicator uses the standard `PanelMenu.Button` popup and keyboard
-handling. Its window entries are rebuilt on each popup opening from
+handling, with a menu alignment of `0.5` to center the popup beneath the paw.
+GNOME keeps the popup within the monitor when the button is near an edge.
+Its window entries are rebuilt on each popup opening from
 `KittyWindowTracker.listKittyWindows()`, including safely read window titles.
 Entries call `Main.activateWindow()` to bring the selected window forward and
 switch to its workspace. If no windows exist, **Restore** calls
 `SessionController.restore()`, which retains its repeated-click and window
 race guards. The indicator owns the menu and its signal handlers; destroying
 the indicator during disable destroys them too.
+
+`WindowTabLoader` queries `kitten @ --to <socket> ls` asynchronously when the
+popup opens, once per process. It counts each OS window's `tabs` array rather
+than its terminal panes and uses the `cwd` of the active pane in the active tab
+as the menu title. Selection uses `is_active`, not desktop focus; a single tab
+or pane can be selected without flags, while ambiguous or missing directories
+retain the window title or numbered fallback. Requests use the existing
+executable and socket settings and the client's timeout and cancellation
+handling. Pending requests are shared across repeated openings. Within each process, Kitty OS-window IDs
+and Mutter stable sequences are matched in creation order only when both
+complete window sets have the same size and valid unique ordering. A window
+set that changes during IO, an unmatched set, or a failed request displays
+**Tabs unavailable**. Closing, reopening, or destroying the menu invalidates
+older title and count updates; disable stops the loader and cancels the client's
+subprocesses.
 
 The GJS performance regression tests reject synchronous filesystem calls during
 snapshot workflows, verify private permissions and recovery after cancellation,
@@ -71,6 +88,9 @@ use temporary directories; they do not access live Kitty sessions.
 The GNOME smoke test exercises the real popup with injected window snapshots
 and action callbacks, checking window selection, fresh titles, stale selections,
 and the empty-window restore action without touching a live Kitty session.
+It also checks asynchronous directory titles and tab counts, missing directories,
+failed and stale requests, and rendered popup centering with short and long
+directory paths in both text directions.
 
 ## Workspace restoration
 

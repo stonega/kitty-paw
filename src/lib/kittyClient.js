@@ -56,6 +56,14 @@ export class KittyClient {
     await this._run([executable, '--detach', '--session', sessionPath]);
   }
 
+  async listWindows({ kittenCommand, socketAddress }) {
+    const executable = executablePath(kittenCommand);
+    const { stdout } = await this._run([executable, '@', '--to', socketAddress, 'ls']);
+    const windows = JSON.parse(stdout);
+    if (!Array.isArray(windows)) throw new Error('Kitty returned an invalid window list.');
+    return windows;
+  }
+
   stop() {
     this._stopped = true;
     for (const operation of this._operations) {
