@@ -20,15 +20,23 @@ Codex UI, so several tabs in the same project restore independently. Original
 prompts and images are not sent again, and `--worktree` does not create another
 worktree during recovery.
 
-Without a valid saved UUID, new-session commands open the Codex resume picker;
-explicit resume and fork commands keep their captured selection. Non-interactive
-Codex subcommands and commands with unrecognized options are relaunched as
-captured under the foreground allowlist policy.
+If the session file missed the hook metadata, capture also checks the same
+running pane's thread ID in Kitty's window details. An explicit
+`codex resume <thread-id>` can supply its UUID without hook metadata. If no exact
+ID is available, supported interactive Codex commands reopen as a shell. Restore
+does not open a thread picker, choose the latest thread, or create another fork.
+Non-interactive Codex subcommands and commands with unrecognized options are
+relaunched as captured under the foreground allowlist policy.
 
 Simple shell command strings reported by Kitty shell integration are supported
 alongside argument arrays. Commands containing shell operators, variable
 expansion, globs, or invalid quoting reopen as a normal shell. Use a direct
 `codex --no-daemon` command for reliable capture.
+
+Simple aliases such as `ac` for `codex` are supported when Kitty can identify a
+single allowlisted foreground process in that terminal. Keep `codex` in the
+allowlist; the alias itself does not need an entry. Exact thread tracking still
+requires the trusted hooks and a local Codex client using `--no-daemon`.
 
 This restores commands, not in-memory application state. Unsaved editor
 buffers, scrollback, shell variables, and command history that has not been
@@ -45,6 +53,12 @@ unavailable. Split panes within a tab are counted as one tab. **Tabs unavailable
 means Kitty's remote control could not provide a matching count for that window.
 Click a window to bring it forward, including switching to its workspace or
 showing it if minimized. The list refreshes each time you open the popup.
+
+A **Codex** badge appears beside the title when any tab or split pane in that
+window has a foreground Codex process, including inactive tabs and panes.
+The badge loads with the directory and tab count and refreshes when the popup
+opens. It works with aliases and does not require the Codex hooks. If Kitty's
+window details are unavailable, the badge stays hidden.
 
 ## Restore a session
 
@@ -107,6 +121,20 @@ If you set `CODEX_HOME`, the installer uses that directory's `hooks.json`.
 The hook also honors `XDG_DATA_HOME` for the installed extension's location.
 
 ## Troubleshooting
+
+### Codex restores as a plain shell
+
+Enable **Restart allowed foreground programs** and keep `codex` in the allowlist.
+After upgrading, let autosave capture the running Codex terminal before closing
+Kitty; existing snapshots with only shell launches cannot recover a thread.
+Simple aliases are resolved from Kitty's foreground process list. Compound
+commands and ambiguous foreground processes still reopen a shell.
+
+For exact thread selection, run `/hooks` in Codex and enable and trust the
+**Linking this Codex thread to its Kitty tab** hook. Resume the intended thread
+with `codex --no-daemon resume <thread-id>` after enabling it, then wait for
+autosave. Without a saved thread UUID, an aliased new-session command reopens as
+a shell. The extension needs that ID to resume the intended thread directly.
 
 ### Codex reports that exact tracking requires a local interactive process
 

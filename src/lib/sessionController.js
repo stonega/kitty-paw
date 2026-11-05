@@ -206,7 +206,11 @@ export class SessionController {
         },
         instances,
         processSession: resumeForegroundProcesses
-          ? (sessionContents) => prepareSavedSession(sessionContents, autoRunCommands)
+          ? async (sessionContents, { pid }) => {
+              const socketAddress = expandSocketTemplate(socketTemplate, pid, environment);
+              const windows = await this._client.listWindows({ kittenCommand, socketAddress });
+              return prepareSavedSession(sessionContents, autoRunCommands, windows);
+            }
           : null,
         reason,
       });

@@ -81,21 +81,34 @@ describe('Codex recovery commands', () => {
   );
 
   test.each([null, undefined, '', '--last', 'invalid-uuid'])(
-    'uses the picker for a new session without a valid saved UUID: %j',
+    'omits automatic Codex startup without a valid saved UUID: %j',
     (invalidId) => {
-      expect(resumeCodexCommand(['codex', '-m', 'my-model', 'original prompt'], invalidId)).toEqual(
-        ['codex', 'resume', '-m', 'my-model'],
-      );
+      expect(
+        resumeCodexCommand(['codex', '-m', 'my-model', 'original prompt'], invalidId),
+      ).toBeNull();
     },
   );
 
-  test('preserves explicit session selection when no hook metadata is available', () => {
+  test('uses an explicit resume UUID when no hook metadata is available', () => {
+    const command = ['codex', 'resume', oldThreadId];
+    expect(resumeCodexCommand(command, null)).toBe(command);
+    expect(
+      resumeCodexCommand(
+        ['codex', '-p', 'work', 'resume', oldThreadId, 'repeat this', '--all'],
+        null,
+      ),
+    ).toEqual(['codex', 'resume', oldThreadId, '-p', 'work']);
+  });
+
+  test('never opens a picker, guesses the last thread, or recreates a fork without metadata', () => {
     for (const command of [
-      ['codex', 'resume', oldThreadId],
+      ['codex', 'resume'],
       ['codex', 'resume', '--last'],
+      ['codex', 'resume', 'named-thread'],
       ['codex', 'fork', oldThreadId],
+      ['codex', 'fork', '--last'],
     ])
-      expect(resumeCodexCommand(command, null)).toBe(command);
+      expect(resumeCodexCommand(command, null)).toBeNull();
   });
 
   test.each([

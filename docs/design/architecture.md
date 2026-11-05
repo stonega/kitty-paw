@@ -48,6 +48,14 @@ checking the allowlist. Quoted literal arguments and escaped spaces are
 preserved; shell expansion, compound commands, redirection, and malformed
 quoting fall back to the configured shell. Captured strings are never evaluated.
 
+For simple shell aliases such as `ac` for `codex`, capture also reads Kitty's
+foreground process listing asynchronously. The transform matches each serialized
+terminal ID to its listing, requires that the same reported shell command is
+still running, and substitutes argv only when exactly one foreground process
+matches the executable allowlist. Idle, changed, missing, or ambiguous terminals
+fall back to the normal allowlist policy. A listing failure retains the last
+complete snapshot.
+
 For allowed interactive Codex commands, the same transform emits `codex resume
 <thread-id>` when exact thread metadata is available. This covers new sessions
 with options or a prompt, resume pickers, `resume --last`, explicit resume IDs,
@@ -66,10 +74,16 @@ including fork and compaction. The end hook clears it only if the window still
 holds the ending thread's UUID. Kitty's session
 serializer preserves the variable on the matching `launch` entry, allowing the
 pure transform to bind each window to its own thread even when several tabs
-share a working directory. The hooks never read the transcript. When metadata
-is absent or malformed, new-session commands become `codex resume` with their
-supported options so Codex shows its picker. Explicit resume and fork commands
-keep their captured selection when metadata is unavailable.
+share a working directory. The hooks never read the transcript.
+
+If serialized metadata is missing or malformed, the transform also checks the
+matching pane's user variables in the asynchronous Kitty listing. It accepts
+that UUID only while the same reported shell command is still running in the
+same unique terminal ID. A captured UUID takes precedence over later metadata.
+Without either source, an explicit `resume <UUID>` provides a direct selection.
+Other supported interactive commands reopen a shell when their exact thread
+cannot be identified. Recovery never introduces a thread picker, guesses the
+latest thread, or creates another fork.
 
 Hooks only accept metadata from a local interactive Codex ancestor. They inspect
 a bounded chain of Linux process metadata in the separate hook process and
@@ -127,9 +141,13 @@ asynchronous query by `WindowTabLoader` through the shared `KittyClient`. Until 
 loads or if it is unavailable, the entry uses its window title or a numbered
 fallback. Counts come from each OS window's `tabs` array in Kitty's remote-control
 listing; directory selection uses tab and pane `is_active` flags so unfocused
-OS windows also show their active directory. Complete per-process window sets
-are matched in creation order. Failed queries and changed or incomplete sets
-leave the count unavailable and retain the fallback title. Closing or rebuilding the popup
+OS windows also show their active directory. A **Codex** badge beside the title
+indicates that any tab or pane has a foreground process with the executable
+basename `codex`, including inactive tabs and split panes. Detection uses argv
+from the same listing and requires no thread hooks. Complete per-process window
+sets are matched in creation order. Failed queries and changed or incomplete sets
+leave the count unavailable, hide the badge, and retain the fallback title.
+Closing or rebuilding the popup
 invalidates pending label updates, and disable stops detail loading along with
 the client's other subprocesses. Each entry uses GNOME Shell's window activation
 helper to focus it and switch workspaces when necessary. Activation rechecks

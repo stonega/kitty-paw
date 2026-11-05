@@ -80,6 +80,13 @@ set that changes during IO, an unmatched set, or a failed request displays
 older title and count updates; disable stops the loader and cancels the client's
 subprocesses.
 
+The same listing supplies a **Codex** badge beside each window title.
+`WindowTabLoader` returns `hasCodex` when any pane in any tab reports a foreground
+process whose argv executable basename is exactly `codex`. This includes
+inactive tabs, split panes, and shell aliases without depending on thread hooks
+or guessing from titles. The badge starts hidden and follows the same request
+generation and complete-window-set guards as directory and count updates.
+
 The GJS performance regression tests reject synchronous filesystem calls during
 snapshot workflows, verify private permissions and recovery after cancellation,
 and check save coalescing and restore guards while IO is pending. All fixtures
@@ -89,8 +96,8 @@ The GNOME smoke test exercises the real popup with injected window snapshots
 and action callbacks, checking window selection, fresh titles, stale selections,
 and the empty-window restore action without touching a live Kitty session.
 It also checks asynchronous directory titles and tab counts, missing directories,
-failed and stale requests, and rendered popup centering with short and long
-directory paths in both text directions.
+Codex badges, failed and stale requests, and rendered popup centering with short
+and long directory paths and visible badges in both text directions.
 
 ## Workspace restoration
 
@@ -123,10 +130,26 @@ commands, a valid `kitty_session_restorer_codex_thread_id` produces `codex resum
 preserves supported configuration options, and removes the original prompt,
 attachments, `--worktree`, and session selection flags. The saved window UUID
 overrides any old resume ID or `--last`. Unknown options and non-interactive
-subcommands are left unchanged. Without a valid UUID, new-session commands open
-the picker and explicit resume/fork commands keep their captured selection.
+subcommands are left unchanged. If the serialized UUID is absent or malformed,
+the transform checks `user_vars.kitty_session_restorer_codex_thread_id` in the
+listing for that terminal ID. The ID must be unique and its `at_prompt: false`
+and `last_reported_cmdline` must still match the captured command. Serialized
+metadata takes precedence. An explicit `resume <UUID>` is also usable without
+hook metadata. Other supported interactive commands have their startup command
+removed when no exact UUID is available, reopening the shell instead of a
+picker or a newly selected thread.
 Snapshot processing happens before the inactive slot is published, so a file
 error cannot replace the last complete snapshot.
+
+When foreground restoration is enabled, the controller also requests
+`kitten @ --to <socket> ls` for each captured instance. `SnapshotStore.capture()`
+awaits its optional `processSession(contents, instance)` callback, allowing the
+controller to provide the matching instance's listing to `prepareSavedSession`.
+Simple aliases are resolved using the serialized terminal `id`, `at_prompt`,
+`last_reported_cmdline`, and `foreground_processes[].cmdline`. Exactly one
+allowlisted foreground argv is required; duplicate IDs and changed commands are
+rejected. The original shell string is never executed or used to expand aliases.
+Listing errors abort publication and preserve the last complete snapshot.
 
 ## Exact Codex thread integration
 

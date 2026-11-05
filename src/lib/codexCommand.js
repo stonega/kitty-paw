@@ -68,6 +68,7 @@ const NON_INTERACTIVE_COMMANDS = new Set([
 function interactiveOptions(args) {
   const options = [];
   let mode = null;
+  let sessionId = null;
   let positionals = 0;
   let literal = false;
 
@@ -115,10 +116,11 @@ function interactiveOptions(args) {
       if (NON_INTERACTIVE_COMMANDS.has(argument)) return null;
     }
     positionals += 1;
+    if (mode === 'resume' && positionals === 1) sessionId = argument;
     if (positionals > (mode ? 2 : 1)) return null;
   }
 
-  return { mode, options };
+  return { mode, options, sessionId };
 }
 
 function parsedCodexCommand(command) {
@@ -145,9 +147,16 @@ export function hasLocalCodexClient(ancestorCommands) {
 
 export function resumeCodexCommand(command, threadId) {
   const parsed = parsedCodexCommand(command);
-  const exactThread = isCodexThreadId(threadId);
-  if (parsed === null || (parsed.mode !== null && !exactThread)) return command;
+  if (parsed === null) return command;
+  const exactThread = isCodexThreadId(threadId)
+    ? threadId
+    : isCodexThreadId(parsed.sessionId)
+      ? parsed.sessionId
+      : null;
+  // A picker, --last, or another fork cannot recover this terminal's thread.
+  // A null command tells the session transform to reopen the configured shell.
+  if (exactThread === null) return null;
 
-  const resumed = [command[0], 'resume', ...(exactThread ? [threadId] : []), ...parsed.options];
+  const resumed = [command[0], 'resume', exactThread, ...parsed.options];
   return JSON.stringify(resumed) === JSON.stringify(command) ? command : resumed;
 }

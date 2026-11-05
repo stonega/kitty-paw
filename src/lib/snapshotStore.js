@@ -174,7 +174,7 @@ export class SnapshotStore {
         if (processSession) {
           const sessionContents = await readText(destination, cancellable);
           if (sessionContents === null) throw new Error('Could not read saved Kitty session.');
-          const processedContents = processSession(sessionContents);
+          const processedContents = await processSession(sessionContents, instance);
           if (typeof processedContents !== 'string')
             throw new Error('Kitty session processing produced invalid output.');
           if (processedContents.length === 0)

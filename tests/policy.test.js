@@ -183,19 +183,16 @@ describe('saved foreground commands', () => {
     expect(resumeCodexThreads(resumed)).toBe(resumed);
   });
 
-  test('opens the Codex resume picker when exact thread metadata is unavailable', () => {
+  test('reopens a shell when exact Codex thread metadata is unavailable', () => {
     const session =
       'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/codex"]}\'\n';
-    expect(resumeCodexThreads(session)).toBe(
-      'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["/usr/bin/codex","resume"]}\'\n',
-    );
+    expect(resumeCodexThreads(session)).toBe('launch \'kitty-unserialize-data={"id":4}\'\n');
   });
 
   test('leaves other and explicitly configured commands unchanged', () => {
     const neovim =
       'launch \'kitty-unserialize-data={"id":4,"cmd_at_shell_startup":["nvim","it\'"\'"\'s.txt"]}\'';
-    const explicitCodex =
-      'launch \'kitty-unserialize-data={"id":5,"cmd_at_shell_startup":["codex","resume","thread-id"]}\'';
+    const explicitCodex = `launch 'kitty-unserialize-data={"id":5,"cmd_at_shell_startup":["codex","resume","${firstThreadId}"]}'`;
 
     expect(resumeCodexThreads(neovim)).toBe(neovim);
     expect(resumeCodexThreads(explicitCodex)).toBe(explicitCodex);
@@ -219,9 +216,7 @@ describe('saved foreground commands', () => {
 
   test('does not use malformed window metadata as a resume argument', () => {
     const session = `launch 'kitty-unserialize-data={"cmd_at_shell_startup":["codex","--model=my-model"]}' --var=${CODEX_THREAD_VARIABLE}=--last`;
-    expect(prepareSavedSession(session, ['codex'])).toContain(
-      '"cmd_at_shell_startup":["codex","resume","--model=my-model"]',
-    );
+    expect(prepareSavedSession(session, ['codex'])).not.toContain('cmd_at_shell_startup');
   });
 
   test('keeps only foreground commands in the auto-run allowlist', () => {

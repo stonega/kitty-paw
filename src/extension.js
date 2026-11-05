@@ -66,6 +66,13 @@ class RestoreIndicator extends PanelMenu.Button {
     for (const [index, window] of windows.entries()) {
       const item = new PopupMenu.PopupMenuItem(window.title?.trim() || `Kitty window ${index + 1}`);
       item.label.add_style_class_name('kitty-session-restorer-window-title');
+      const codexBadge = new St.Label({
+        text: 'Codex',
+        style_class: 'kitty-session-restorer-codex-badge',
+        visible: false,
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+      item.add_child(codexBadge);
       const countLabel = new St.Label({
         text: '…',
         style_class: 'kitty-session-restorer-tab-count dim-label',
@@ -74,7 +81,7 @@ class RestoreIndicator extends PanelMenu.Button {
         y_align: Clutter.ActorAlign.CENTER,
       });
       item.add_child(countLabel);
-      labels.set(window.metaWindow, { count: countLabel, title: item.label });
+      labels.set(window.metaWindow, { codex: codexBadge, count: countLabel, title: item.label });
       item.connect('activate', (_item, event) => {
         // A window may close while the popup is open.
         if (this._listWindows().some(({ metaWindow }) => metaWindow === window.metaWindow))
@@ -106,6 +113,7 @@ class RestoreIndicator extends PanelMenu.Button {
       const info = unchanged ? details.get(window.metaWindow) : undefined;
       const entry = labels.get(window.metaWindow);
       if (info?.directory) entry.title.text = info.directory;
+      entry.codex.visible = info?.hasCodex === true;
       const count = info?.tabCount;
       entry.count.text =
         count === undefined ? 'Tabs unavailable' : `${count} ${count === 1 ? 'tab' : 'tabs'}`;

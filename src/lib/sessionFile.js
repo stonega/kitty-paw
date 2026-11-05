@@ -106,14 +106,52 @@ export function isAutoRunCommandAllowed(command, allowedCommands) {
   );
 }
 
-function savedCodexThreadId(words) {
+function savedCodexThreadId(words, command, window) {
   const variable = words.find((word) => word.startsWith(CODEX_THREAD_VARIABLE_PREFIX));
-  if (!variable) return null;
-  const threadId = variable.slice(CODEX_THREAD_VARIABLE_PREFIX.length);
-  return isCodexThreadId(threadId) ? threadId : null;
+  const threadId = variable?.slice(CODEX_THREAD_VARIABLE_PREFIX.length);
+  if (isCodexThreadId(threadId)) return threadId;
+
+  // The hook can finish after Kitty serialized the session. Only use the later
+  // listing when the same shell command is still running in this exact pane.
+  const liveThreadId = window?.user_vars?.[CODEX_THREAD_VARIABLE];
+  return matchesForegroundCommand(command, window) && isCodexThreadId(liveThreadId)
+    ? liveThreadId
+    : null;
 }
 
-function rewriteLaunch(line, allowedCommands, enforceAllowlist) {
+function foregroundWindowsById(windows) {
+  const byId = new Map();
+  for (const osWindow of Array.isArray(windows) ? windows : []) {
+    for (const tab of Array.isArray(osWindow?.tabs) ? osWindow.tabs : []) {
+      for (const window of Array.isArray(tab?.windows) ? tab.windows : []) {
+        if (!Number.isSafeInteger(window?.id) || window.id <= 0) continue;
+        byId.set(window.id, byId.has(window.id) ? null : window);
+      }
+    }
+  }
+  return byId;
+}
+
+function matchesForegroundCommand(command, window) {
+  return (
+    command !== null &&
+    window?.at_prompt === false &&
+    JSON.stringify(foregroundCommandArgv(window.last_reported_cmdline)) === JSON.stringify(command)
+  );
+}
+
+function resolveForegroundAlias(command, window, allowedCommands) {
+  if (command === null || isAutoRunCommandAllowed(command, allowedCommands)) return command;
+  // Never evaluate aliases or substitute a process from another pane or job.
+  if (!matchesForegroundCommand(command, window)) return command;
+
+  const candidates = (Array.isArray(window.foreground_processes) ? window.foreground_processes : [])
+    .map((process) => process?.cmdline)
+    .filter((argv) => Array.isArray(argv) && isAutoRunCommandAllowed(argv, allowedCommands));
+  return candidates.length === 1 ? candidates[0] : command;
+}
+
+function rewriteLaunch(line, allowedCommands, enforceAllowlist, foregroundWindows = new Map()) {
   const match = /^(\s*launch)\s+(.+)$/.exec(line);
   if (!match) return line;
 
@@ -132,14 +170,20 @@ function rewriteLaunch(line, allowedCommands, enforceAllowlist) {
   try {
     const serialized = JSON.parse(words[serializedIndex].slice(SERIALIZED_LAUNCH_PREFIX.length));
     const originalCommand = serialized.cmd_at_shell_startup;
-    const command = foregroundCommandArgv(originalCommand);
+    const capturedCommand = foregroundCommandArgv(originalCommand);
+    const window = foregroundWindows.get(serialized.id);
+    const command = resolveForegroundAlias(capturedCommand, window, allowedCommands);
     if (enforceAllowlist && !isAutoRunCommandAllowed(command, allowedCommands)) {
       if (!Object.hasOwn(serialized, 'cmd_at_shell_startup')) return line;
       delete serialized.cmd_at_shell_startup;
     } else {
-      const resumed = resumeCodexCommand(command, savedCodexThreadId(words));
+      const resumed = resumeCodexCommand(
+        command,
+        savedCodexThreadId(words, capturedCommand, window),
+      );
       if (resumed === command && (!enforceAllowlist || command === originalCommand)) return line;
-      serialized.cmd_at_shell_startup = resumed;
+      if (resumed === null) delete serialized.cmd_at_shell_startup;
+      else serialized.cmd_at_shell_startup = resumed;
     }
     words[serializedIndex] = `${SERIALIZED_LAUNCH_PREFIX}${JSON.stringify(serialized)}`;
     return `${match[1]} ${words.map(quoteShellWord).join(' ')}`;
@@ -157,10 +201,11 @@ export function resumeCodexThreads(sessionContents) {
     .join('\n');
 }
 
-export function prepareSavedSession(sessionContents, allowedCommands) {
+export function prepareSavedSession(sessionContents, allowedCommands, windows = []) {
   const normalizedCommands = normalizeAutoRunCommands(allowedCommands);
+  const foregroundWindows = foregroundWindowsById(windows);
   return sessionContents
     .split('\n')
-    .map((line) => rewriteLaunch(line, normalizedCommands, true))
+    .map((line) => rewriteLaunch(line, normalizedCommands, true, foregroundWindows))
     .join('\n');
 }

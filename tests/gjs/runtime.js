@@ -10,6 +10,7 @@ import { prepareSavedSession } from '../../src/lib/sessionFile.js';
 import { SnapshotStore } from '../../src/lib/snapshotStore.js';
 import { WorkspaceRestorer } from '../../src/lib/workspaceRestorer.js';
 import { runCodexConfigTests } from './codexIntegration.js';
+import { runForegroundCaptureTests } from './foregroundCapture.js';
 import { runPerformanceTests } from './performance.js';
 
 function assert(condition, message) {
@@ -219,6 +220,7 @@ try {
     assert(readText(hookLog) === previousLog, 'A rejected hook changed Kitty metadata.');
   }
   await runCodexConfigTests(temporaryDirectory);
+  await runForegroundCaptureTests(temporaryDirectory);
 
   const first = await store.capture({
     captureInstance: (pid, destination) =>

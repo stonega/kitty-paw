@@ -13,6 +13,23 @@ function activeDirectory(osWindow) {
   return typeof cwd === 'string' && cwd.trim() ? cwd : undefined;
 }
 
+function hasCodexProcess(osWindow) {
+  return osWindow.tabs.some((tab) =>
+    (Array.isArray(tab?.windows) ? tab.windows : []).some((terminal) =>
+      (Array.isArray(terminal?.foreground_processes) ? terminal.foreground_processes : []).some(
+        (process) => {
+          const command = process?.cmdline;
+          return (
+            Array.isArray(command) &&
+            typeof command[0] === 'string' &&
+            command[0].split('/').at(-1) === 'codex'
+          );
+        },
+      ),
+    ),
+  );
+}
+
 export function matchWindowTabDetails(windows, osWindows) {
   const details = new Map();
   if (!Array.isArray(osWindows) || windows.length !== osWindows.length) return details;
@@ -40,6 +57,7 @@ export function matchWindowTabDetails(windows, osWindows) {
     const osWindow = remote[index];
     details.set(window.metaWindow, {
       directory: activeDirectory(osWindow),
+      hasCodex: hasCodexProcess(osWindow),
       tabCount: osWindow.tabs.length,
     });
   }

@@ -15,8 +15,16 @@ describe('window tab details', () => {
     const windows = [second, first];
     const remote = [remoteWindow(8, 3), remoteWindow(2, 1)];
     const details = matchWindowTabDetails(windows, remote);
-    expect(details.get(first.metaWindow)).toEqual({ directory: undefined, tabCount: 1 });
-    expect(details.get(second.metaWindow)).toEqual({ directory: undefined, tabCount: 3 });
+    expect(details.get(first.metaWindow)).toEqual({
+      directory: undefined,
+      hasCodex: false,
+      tabCount: 1,
+    });
+    expect(details.get(second.metaWindow)).toEqual({
+      directory: undefined,
+      hasCodex: false,
+      tabCount: 3,
+    });
     expect(windows).toEqual([second, first]);
     expect(remote.map(({ id }) => id)).toEqual([8, 2]);
   });
@@ -78,9 +86,14 @@ describe('window tab details', () => {
     const details = await loader.load([second, first]);
     expect(details.get(first.metaWindow)).toEqual({
       directory: '/home/stone/My Project/目錄',
+      hasCodex: false,
       tabCount: 2,
     });
-    expect(details.get(second.metaWindow)).toEqual({ directory: '/srv/second', tabCount: 1 });
+    expect(details.get(second.metaWindow)).toEqual({
+      directory: '/srv/second',
+      hasCodex: false,
+      tabCount: 1,
+    });
     expect(calls).toBe(1);
     remote[1].tabs[1].windows[1].cwd = '/changed';
     expect((await loader.load([first, second])).get(first.metaWindow)?.directory).toBe('/changed');
@@ -93,7 +106,7 @@ describe('window tab details', () => {
       matchWindowTabDetails([current], [{ id: 1, tabs: [{ windows: [{ cwd: '/' }] }] }]).get(
         current.metaWindow,
       ),
-    ).toEqual({ directory: '/', tabCount: 1 });
+    ).toEqual({ directory: '/', hasCodex: false, tabCount: 1 });
   });
 
   test('keeps tab counts when the active directory is missing, malformed, or ambiguous', () => {
@@ -125,8 +138,74 @@ describe('window tab details', () => {
     ])
       expect(matchWindowTabDetails([current], [{ id: 1, tabs }]).get(current.metaWindow)).toEqual({
         directory: undefined,
+        hasCodex: false,
         tabCount: tabs.length,
       });
+  });
+
+  test('detects Codex in an inactive tab or split pane from foreground argv, including aliases', () => {
+    const first = window(42, 1);
+    const second = window(42, 2);
+    for (const command of [
+      ['codex'],
+      ['/opt/codex/bin/codex', '--no-daemon', 'resume', '--last'],
+    ]) {
+      const terminal = {
+        is_active: false,
+        last_reported_cmdline: 'ac',
+        foreground_processes: [{ cmdline: ['zsh'] }, { cmdline: command }],
+      };
+      for (const tabs of [
+        [{ is_active: true, windows: [{ is_active: true, cwd: '/shell' }, terminal] }],
+        [
+          { is_active: true, windows: [{ cwd: '/shell' }] },
+          { is_active: false, windows: [terminal] },
+        ],
+      ]) {
+        const details = matchWindowTabDetails(
+          [second, first],
+          [
+            { id: 2, tabs: [{ windows: [{ cwd: '/other' }] }] },
+            { id: 1, tabs },
+          ],
+        );
+        expect(details.get(first.metaWindow)?.hasCodex).toBe(true);
+        expect(details.get(second.metaWindow)?.hasCodex).toBe(false);
+        expect(details.get(first.metaWindow)?.directory).toBe('/shell');
+      }
+    }
+  });
+
+  test('ignores missing or malformed process data and commands that only mention Codex', () => {
+    const current = window(42, 1);
+    for (const processes of [
+      undefined,
+      null,
+      {},
+      [],
+      [null, {}, { cmdline: null }, { cmdline: [] }, { cmdline: [42] }],
+      [{ cmdline: 'codex' }],
+      [{ cmdline: ['codex-helper'] }],
+      [{ cmdline: ['/usr/bin/echo', 'codex'] }],
+    ]) {
+      const terminal = { title: 'Codex', foreground_processes: processes };
+      const details = matchWindowTabDetails(
+        [current],
+        [{ id: 1, tabs: [{ windows: [terminal] }] }],
+      );
+      expect(details.get(current.metaWindow)?.hasCodex).toBe(false);
+    }
+  });
+
+  test('refreshes Codex presence after its foreground process exits', async () => {
+    const current = window(42, 1);
+    const terminal = { foreground_processes: [{ cmdline: ['codex'] }] };
+    const loader = new WindowTabLoader({
+      listWindows: async () => [{ id: 1, tabs: [{ windows: [terminal] }] }],
+    });
+    expect((await loader.load([current])).get(current.metaWindow)?.hasCodex).toBe(true);
+    terminal.foreground_processes = [{ cmdline: ['zsh'] }];
+    expect((await loader.load([current])).get(current.metaWindow)?.hasCodex).toBe(false);
   });
 
   test('queries once per process and isolates failures and invalid PIDs', async () => {

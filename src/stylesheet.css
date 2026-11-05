@@ -10,6 +10,15 @@
   max-width: 30em;
 }
 
+.kitty-session-restorer-codex-badge {
+  background-color: rgba(128, 128, 128, 0.2);
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 0.5em;
+  padding: 0.1em 0.5em;
+  font-size: 0.8em;
+  font-weight: bold;
+}
+
 .kitty-session-restorer-tab-count {
   margin: 0 0.5em;
 }

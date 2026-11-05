@@ -85,9 +85,11 @@ For manual setup, merge the entries from
 
 The hook stores only the Codex thread UUID as private Kitty window metadata,
 and each snapshot saves it with that window's recovery command. Model, profile,
-and other supported options are retained. Without a valid UUID, new-session
-commands open the resume picker; explicit `resume` and `fork` commands retain
-their captured selection. See the [user guide](docs/user/guide.md) for details.
+and other supported options are retained. Capture also checks the matching
+running pane's metadata if the serialized UUID is missing. Without an exact ID
+from metadata or an explicit `resume <UUID>`, supported interactive commands
+reopen a shell instead of a thread picker. See the [user guide](docs/user/guide.md)
+for details.
 
 Custom installations use `$CODEX_HOME/hooks.json` and `$XDG_DATA_HOME` for the
 installed extension, with the usual `~/.codex` and `~/.local/share` defaults.
